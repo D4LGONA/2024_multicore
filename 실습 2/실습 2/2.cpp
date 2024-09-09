@@ -5,8 +5,7 @@
 #include <vector>
 #include <atomic>
 
-std::atomic <int> sum; // lock을 사용하지 않고 atomic사용
-// 특별한 명령어이기 때문에 4배정도 느리다?
+volatile int sum; 
 std::mutex my_lock;
 
 void worker_nolock(const int num_loop)
@@ -14,6 +13,17 @@ void worker_nolock(const int num_loop)
 	for (auto i = 0; i < num_loop; ++i) {
 		sum += 2;
 	}
+}
+
+void worker_opt(const int num_loop)
+{
+	volatile int local_sum = 0;
+	for (auto i = 0; i < num_loop; ++i) {
+		local_sum = local_sum + 2;
+	}
+	my_lock.lock();
+	sum = sum + local_sum;
+	my_lock.unlock();
 }
 
 void worker(const int num_loop)
@@ -37,7 +47,7 @@ int main()
 			int num_loop = 50000000 / n;
 			if (i == (n - 1))
 				num_loop += 50000000 % num_loop;
-			tv.emplace_back(worker_nolock, num_loop);
+			tv.emplace_back(worker_opt, num_loop);
 		}
 		for (auto& th : tv)
 			th.join();
