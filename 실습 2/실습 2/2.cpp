@@ -3,7 +3,7 @@
 #include <mutex>
 #include <chrono>
 #include <vector>
-int sum;
+volatile int sum; // 최적화 하지 않도록 만듦
 std::mutex my_lock;
 
 void worker_nolock(const int num_loop)
