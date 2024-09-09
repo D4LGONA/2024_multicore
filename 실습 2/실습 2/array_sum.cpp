@@ -6,13 +6,13 @@
 #include <atomic>
 
 const int MAX_THREADS = 16;
-volatile int sum[MAX_THREADS];
+volatile int sum[MAX_THREADS * 16]; // 64/4ÇÑ°Í
 std::mutex my_lock;
 
 void worker_nolock(const int th_id, const int num_loop)
 {
 	for (auto i = 0; i < num_loop; ++i) {
-		sum[th_id] = sum[th_id] + 2;
+		sum[th_id * 16] = sum[th_id * 16] + 2;
 	}
 }
 
