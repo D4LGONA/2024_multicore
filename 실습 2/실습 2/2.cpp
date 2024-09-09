@@ -3,13 +3,16 @@
 #include <mutex>
 #include <chrono>
 #include <vector>
-volatile int sum; // 최적화 하지 않도록 만듦
+#include <atomic>
+
+std::atomic <int> sum; // lock을 사용하지 않고 atomic사용
+// 특별한 명령어이기 때문에 4배정도 느리다?
 std::mutex my_lock;
 
 void worker_nolock(const int num_loop)
 {
 	for (auto i = 0; i < num_loop; ++i) {
-		sum = sum + 2;
+		sum += 2;
 	}
 }
 
@@ -34,7 +37,7 @@ int main()
 			int num_loop = 50000000 / n;
 			if (i == (n - 1))
 				num_loop += 50000000 % num_loop;
-			tv.emplace_back(worker, num_loop);
+			tv.emplace_back(worker_nolock, num_loop);
 		}
 		for (auto& th : tv)
 			th.join();
