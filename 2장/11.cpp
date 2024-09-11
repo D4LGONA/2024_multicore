@@ -1,33 +1,20 @@
 #include <iostream>
 #include <thread>
 #include <mutex>
-// debug에서는 잘 돌아가지만(100) release에는 0이 나온다.
 
-std::mutex m;
-bool g_ready = false;
-int g_data = 0;
+volatile bool g_ready = false;
+volatile int g_data = 0;
 
 void Recv()
 {
-	while (true) {
-		m.lock();
-		if (true == g_ready) {
-			m.unlock();
-			break;
-		}
-		m.unlock();
-	}
-	m.lock();
+	while (false == g_ready);
 	std::cout << "Data: " << g_data << std::endl;
-	m.unlock();
 }
 
 void Send()
 {
-	m.lock();
-	g_data = 100;
-	g_ready = true;
-	m.unlock();
+	g_data = 100; // volatile을 쓰지않으면 g_data와 g_ready에
+	g_ready = true; // 값이 들어가는 순서가 바뀔수도...
 }
 
 int main()
