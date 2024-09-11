@@ -2,8 +2,8 @@
 #include <thread>
 #include <mutex>
 
-volatile bool g_ready = false;
-volatile int g_data = 0;
+std::atomic_bool g_ready = false;
+std::atomic_int g_data = 0;
 
 void Recv()
 {
