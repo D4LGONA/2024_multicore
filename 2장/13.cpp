@@ -33,7 +33,9 @@ void p_lock(int th_id)
 {
 	int other = 1 - th_id;
 	flags[th_id] = true;
+	_asm mfence;
 	victim = th_id; // 양보하기.
+	_asm mfence;
 	while (flags[other] == true and victim == th_id);
 }
 
