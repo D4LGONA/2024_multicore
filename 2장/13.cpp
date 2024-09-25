@@ -1,5 +1,4 @@
 // peterson //
-
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -33,9 +32,9 @@ void p_lock(int th_id)
 {
 	int other = 1 - th_id;
 	flags[th_id] = true;
-	_asm mfence;
+	std::atomic_thread_fence(std::memory_order_seq_cst);
 	victim = th_id; // 양보하기.
-	_asm mfence;
+	std::atomic_thread_fence(std::memory_order_seq_cst);
 	while (flags[other] == true and victim == th_id);
 }
 
