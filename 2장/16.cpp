@@ -20,8 +20,10 @@ void worker_1()
 {
 	while(false == done) {
 		int v = *bounce;
-		if (v != 0 and v != -1)
+		if (v != 0 and v != -1) {
 			num_error++;
+			printf("%X ", v); // 어떤 값으로 에러가 났는지 확인하기
+		}
 	}
 }
 
