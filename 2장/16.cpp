@@ -1,6 +1,7 @@
 #include <iostream>
 #include <thread>
 #include <mutex>
+#include <atomic>
 
 constexpr int SIZE = 50000000;
 volatile int* bounce;
