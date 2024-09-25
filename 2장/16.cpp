@@ -37,7 +37,7 @@ int main()
 	long long addr = reinterpret_cast<long long>(p);
 	addr = (addr / 64) * 64; 
 	addr = addr - 2; // 얘를 추가했을떄 에러가 많이 생김.
-	// 왜? 
+	// addr = addr - 1; // 을 하면 FFFF FF00, 00FF FFFF값이 들어옴.
 
 	bounce = reinterpret_cast<int*>(addr);
 	*bounce = 0;
