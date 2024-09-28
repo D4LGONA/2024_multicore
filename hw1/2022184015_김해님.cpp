@@ -6,8 +6,8 @@
 #include <chrono>
 using namespace std;
 
-volatile bool* flag;
-volatile int* label;
+bool* flag;
+int* label;
 volatile int sum;
 vector<thread> t;
 mutex l;
@@ -18,7 +18,6 @@ void lock(int th_id)
 {
 	flag[th_id] = true;
 	label[th_id] = *max_element(label, label + thread_num) + 1;
-	//??
 	for (int k = 0; k < thread_num; ++k)
 		while (k != th_id && flag[k] &&
 			(label[k] < label[th_id] ||
