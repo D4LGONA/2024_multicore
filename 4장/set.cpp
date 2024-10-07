@@ -14,15 +14,9 @@ public:
 	void unlock() { n_lock.unlock(); }
 };
 
-class DUMMYMUTEX {
-public:
-	void lock() {}
-	void unlock() {}
-};
-
 class C_SET {
 	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
-	DUMMYMUTEX set_lock;
+	std::mutex set_lock;
 public:
 	C_SET()
 	{
@@ -107,89 +101,6 @@ public:
 		std::cout << std::endl;
 	}
 };
-
-class F_SET {
-	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
-public:
-	F_SET()
-	{
-		head.next = &tail;
-	}
-	void clear()
-	{
-		while (head.next != &tail) {
-			auto p = head.next;
-			head.next = head.next->next;
-			delete p;
-		}
-	}
-	bool Add(int x)
-	{
-		auto n_node = new NODE(x);
-		auto prev = &head;
-		auto curr = prev->next;
-		while (curr->key < x) {
-			prev = curr;
-			curr = curr->next;
-		}
-		if (curr->key == x) {
-			delete n_node;
-			return false;
-		}
-		else {
-			prev->lock(); curr->lock();
-			n_node->next = curr;
-			prev->next = n_node;
-			prev->unlock(); curr->unlock();
-			return true;
-		}
-	}
-	bool Remove(int x)
-	{
-		auto prev = &head;
-		auto curr = prev->next;
-		while (curr->key < x) {
-			prev = curr;
-			curr = curr->next;
-		}
-		if (curr->key == x) {
-			prev->lock(); curr->lock();
-			prev->next = curr->next;
-			prev->unlock(); curr->unlock();
-			delete curr;
-			return true;
-		}
-		else {
-			return false;
-		}
-	}
-	bool Contains(int x)
-	{
-		auto prev = &head;
-		auto curr = prev->next;
-		while (curr->key < x) {
-			prev = curr;
-			curr = curr->next;
-		}
-		if (curr->key == x) {
-			return true;
-		}
-		else {
-			return false;
-		}
-	}
-	void print20()
-	{
-		auto p = head.next;
-		for (int i = 0; i < 20; ++i) {
-			if (p == &tail) break;
-			std::cout << p->key << ", ";
-			p = p->next;
-		}
-		std::cout << std::endl;
-	}
-};
-
 
 C_SET my_set{};
 

@@ -176,44 +176,59 @@ public:
 
 	bool Remove(int x)
 	{
-		auto prev = &head;
-		auto curr = prev->next;
-		while (curr->key < x) {
-			prev->unlock();
-			prev = curr;
-			curr = curr->next;
-			curr->lock();
-		}
-		if (curr->key == x) {
-			prev->next = curr->next;
-			prev->unlock(); curr->unlock();
-			delete curr;
-			return true;
-		}
-		else {
-			prev->unlock(); curr->unlock();
-			return false;
+		while (true) {
+			// 검색
+			auto prev = &head;
+			auto curr = prev->next;
+			while (curr->key < x) {
+				prev = curr;
+				curr = curr->next;
+			}
+		
+			// lock
+			prev->lock(); curr->lock();
+
+			// 검사
+			if (false == validate(x, prev, curr)) {
+				prev->unlock(); curr->unlock();
+				continue;
+			}
+
+			if (curr->key == x) {
+				prev->next = curr->next;
+				prev->unlock(); curr->unlock();
+				return true;
+			}
+			else {
+				prev->unlock(); curr->unlock();
+				return false;
+			}
 		}
 	}
 	bool Contains(int x)
 	{
-		auto prev = &head;
-		prev->lock();
-		auto curr = prev->next;
-		curr->lock();
-		while (curr->key < x) {
-			prev->unlock();
-			prev = curr;
-			curr = curr->next;
-			curr->lock();
-		}
-		if (curr->key == x) {
-			prev->unlock(); curr->unlock();
-			return true;
-		}
-		else {
-			prev->unlock(); curr->unlock();
-			return false;
+		while (true) {
+			auto prev = &head;
+			auto curr = prev->next;
+			while (curr->key < x) {
+				prev = curr;
+				curr = curr->next;
+			}
+
+			prev->lock(); curr->lock(); 
+			if (false == validate(x, prev, curr)) {
+				prev->unlock(); curr->unlock();
+				continue;
+			}
+
+			if (curr->key == x) {
+				prev->unlock(); curr->unlock();
+				return true;
+			}
+			else {
+				prev->unlock(); curr->unlock();
+				return false;
+			}
 		}
 	}
 	void print20()
