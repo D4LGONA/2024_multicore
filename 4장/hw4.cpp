@@ -20,9 +20,10 @@ public:
 	void unlock() {}
 };
 
+// 성긴동기화
 class C_SET {
 	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
-	DUMMYMUTEX set_lock;
+	std::mutex set_lock;
 public:
 	C_SET()
 	{
@@ -108,6 +109,7 @@ public:
 	}
 };
 
+// 세밀한 동기화
 class F_SET {
 	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
 public:
@@ -127,17 +129,21 @@ public:
 	{
 		auto n_node = new NODE(x);
 		auto prev = &head;
+		prev->lock();
 		auto curr = prev->next;
+		curr->lock();
 		while (curr->key < x) {
+			prev->unlock();
 			prev = curr;
 			curr = curr->next;
+			curr->lock();
 		}
 		if (curr->key == x) {
+			curr->unlock(); prev->unlock();
 			delete n_node;
 			return false;
 		}
 		else {
-			prev->lock(); curr->lock();
 			n_node->next = curr;
 			prev->next = n_node;
 			prev->unlock(); curr->unlock();
@@ -147,19 +153,23 @@ public:
 	bool Remove(int x)
 	{
 		auto prev = &head;
+		prev->lock();
 		auto curr = prev->next;
+		curr->lock();
 		while (curr->key < x) {
+			prev->unlock();
 			prev = curr;
 			curr = curr->next;
+			curr->lock();
 		}
 		if (curr->key == x) {
-			prev->lock(); curr->lock();
 			prev->next = curr->next;
 			prev->unlock(); curr->unlock();
 			delete curr;
 			return true;
 		}
 		else {
+			prev->unlock(); curr->unlock();
 			return false;
 		}
 	}
@@ -190,8 +200,8 @@ public:
 	}
 };
 
-
-C_SET my_set{};
+F_SET my_set{};
+C_SET my_set2{};
 
 const int NUM_TEST = 4000000;
 const int KEY_RANGE = 1000;
@@ -217,11 +227,32 @@ void benchmark(const int num_thread)
 	}
 }
 
+void benchmark2(const int num_thread)
+{
+	int key;
+
+	for (int i = 0; i < NUM_TEST / num_thread; i++) {
+		switch (rand() % 3) {
+		case 0: key = rand() % KEY_RANGE;
+			my_set2.Add(key);
+			break;
+		case 1: key = rand() % KEY_RANGE;
+			my_set2.Remove(key);
+			break;
+		case 2: key = rand() % KEY_RANGE;
+			my_set2.Contains(key);
+			break;
+		default: std::cout << "Error\n";
+			exit(-1);
+		}
+	}
+}
 
 int main()
 {
 	using namespace std::chrono;
 
+	// case 1: 세밀한 동기화 리스트
 	for (int n = 1; n <= 16; n = n * 2) {
 		my_set.clear();
 		std::vector<std::thread> tv;
@@ -236,5 +267,22 @@ int main()
 		size_t ms = duration_cast<milliseconds>(exec_t).count();
 		std::cout << n << " Threads,  " << ms << "ms.";
 		my_set.print20();
+	}
+
+	// case 2: 성긴 동기화 리스트
+	for (int n = 1; n <= 16; n = n * 2) {
+		my_set2.clear();
+		std::vector<std::thread> tv;
+		auto start_t = high_resolution_clock::now();
+		for (int i = 0; i < n; ++i) {
+			tv.emplace_back(benchmark, n);
+		}
+		for (auto& th : tv)
+			th.join();
+		auto end_t = high_resolution_clock::now();
+		auto exec_t = end_t - start_t;
+		size_t ms = duration_cast<milliseconds>(exec_t).count();
+		std::cout << n << " Threads,  " << ms << "ms.";
+		my_set2.print20();
 	}
 }

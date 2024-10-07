@@ -127,17 +127,21 @@ public:
 	{
 		auto n_node = new NODE(x);
 		auto prev = &head;
+		prev->lock();
 		auto curr = prev->next;
+		curr->lock();
 		while (curr->key < x) {
+			prev->unlock();
 			prev = curr;
 			curr = curr->next;
+			curr->lock();
 		}
 		if (curr->key == x) {
+			prev->unlock(); curr->unlock();
 			delete n_node;
 			return false;
 		}
 		else {
-			prev->lock(); curr->lock();
 			n_node->next = curr;
 			prev->next = n_node;
 			prev->unlock(); curr->unlock();
@@ -147,34 +151,44 @@ public:
 	bool Remove(int x)
 	{
 		auto prev = &head;
+		prev->lock();
 		auto curr = prev->next;
+		curr->lock();
 		while (curr->key < x) {
+			prev->unlock();
 			prev = curr;
 			curr = curr->next;
+			curr->lock();
 		}
 		if (curr->key == x) {
-			prev->lock(); curr->lock();
 			prev->next = curr->next;
 			prev->unlock(); curr->unlock();
 			delete curr;
 			return true;
 		}
 		else {
+			prev->unlock(); curr->unlock();
 			return false;
 		}
 	}
 	bool Contains(int x)
 	{
 		auto prev = &head;
+		prev->lock();
 		auto curr = prev->next;
+		curr->lock();
 		while (curr->key < x) {
+			prev->unlock();
 			prev = curr;
 			curr = curr->next;
+			curr->lock();
 		}
 		if (curr->key == x) {
+			prev->unlock(); curr->unlock();
 			return true;
 		}
 		else {
+			prev->unlock(); curr->unlock();
 			return false;
 		}
 	}
@@ -191,7 +205,7 @@ public:
 };
 
 
-C_SET my_set{};
+F_SET my_set{};
 
 const int NUM_TEST = 4000000;
 const int KEY_RANGE = 1000;

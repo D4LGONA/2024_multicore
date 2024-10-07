@@ -14,100 +14,6 @@ public:
 	void unlock() { n_lock.unlock(); }
 };
 
-class DUMMYMUTEX {
-public:
-	void lock() {}
-	void unlock() {}
-};
-
-class C_SET {
-	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
-	DUMMYMUTEX set_lock;
-public:
-	C_SET()
-	{
-		head.next = &tail;
-	}
-	void clear()
-	{
-		while (head.next != &tail) {
-			auto p = head.next;
-			head.next = head.next->next;
-			delete p;
-		}
-	}
-	bool Add(int x)
-	{
-		auto n_node = new NODE(x);
-		auto prev = &head;
-		set_lock.lock();
-		auto curr = prev->next;
-		while (curr->key < x) {
-			prev = curr;
-			curr = curr->next;
-		}
-		if (curr->key == x) {
-			set_lock.unlock();
-			delete n_node;
-			return false;
-		}
-		else {
-			n_node->next = curr;
-			prev->next = n_node;
-			set_lock.unlock();
-			return true;
-		}
-	}
-	bool Remove(int x)
-	{
-		auto prev = &head;
-		set_lock.lock();
-		auto curr = prev->next;
-		while (curr->key < x) {
-			prev = curr;
-			curr = curr->next;
-		}
-		if (curr->key == x) {
-			prev->next = curr->next;
-			set_lock.unlock();
-			delete curr;
-			return true;
-		}
-		else {
-			set_lock.unlock();
-			return false;
-		}
-	}
-	bool Contains(int x)
-	{
-		auto prev = &head;
-		set_lock.lock();
-		auto curr = prev->next;
-		while (curr->key < x) {
-			prev = curr;
-			curr = curr->next;
-		}
-		if (curr->key == x) {
-			set_lock.unlock();
-			return true;
-		}
-		else {
-			set_lock.unlock();
-			return false;
-		}
-	}
-	void print20()
-	{
-		auto p = head.next;
-		for (int i = 0; i < 20; ++i) {
-			if (p == &tail) break;
-			std::cout << p->key << ", ";
-			p = p->next;
-		}
-		std::cout << std::endl;
-	}
-};
-
 class F_SET {
 	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
 public:
@@ -127,17 +33,21 @@ public:
 	{
 		auto n_node = new NODE(x);
 		auto prev = &head;
+		prev->lock();
 		auto curr = prev->next;
+		curr->lock();
 		while (curr->key < x) {
+			prev->unlock();
 			prev = curr;
 			curr = curr->next;
+			curr->lock();
 		}
 		if (curr->key == x) {
+			prev->unlock(); curr->unlock();
 			delete n_node;
 			return false;
 		}
 		else {
-			prev->lock(); curr->lock();
 			n_node->next = curr;
 			prev->next = n_node;
 			prev->unlock(); curr->unlock();
@@ -147,34 +57,44 @@ public:
 	bool Remove(int x)
 	{
 		auto prev = &head;
+		prev->lock();
 		auto curr = prev->next;
+		curr->lock();
 		while (curr->key < x) {
+			prev->unlock();
 			prev = curr;
 			curr = curr->next;
+			curr->lock();
 		}
 		if (curr->key == x) {
-			prev->lock(); curr->lock();
 			prev->next = curr->next;
 			prev->unlock(); curr->unlock();
 			delete curr;
 			return true;
 		}
 		else {
+			prev->unlock(); curr->unlock();
 			return false;
 		}
 	}
 	bool Contains(int x)
 	{
 		auto prev = &head;
+		prev->lock();
 		auto curr = prev->next;
+		curr->lock();
 		while (curr->key < x) {
+			prev->unlock();
 			prev = curr;
 			curr = curr->next;
+			curr->lock();
 		}
 		if (curr->key == x) {
+			prev->unlock(); curr->unlock();
 			return true;
 		}
 		else {
+			prev->unlock(); curr->unlock();
 			return false;
 		}
 	}
@@ -190,8 +110,125 @@ public:
 	}
 };
 
+class O_SET {
+	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
+public:
+	O_SET()
+	{
+		head.next = &tail;
+	}
+	void clear()
+	{
+		while (head.next != &tail) {
+			auto p = head.next;
+			head.next = head.next->next;
+			delete p;
+		}
+	}
+	
+	bool validate(const int x, NODE* prev, NODE* curr) // 교재에 있는거랑 같음
+	{
+		auto p = &head;
+		auto c = p->next;
+		while (c->key < x) {
+			p = c;
+			c = c->next;
+		}
+		return (prev == p) and (curr == c);
+	}
 
-C_SET my_set{};
+	bool Add(int x)
+	{
+		auto n_node = new NODE(x);
+		while (true) {
+
+			// 검색
+			auto prev = &head;
+			auto curr = prev->next;
+			while (curr->key < x) {
+				prev = curr;
+				curr = curr->next;
+			}
+
+			// locking
+			prev->lock(); curr->lock();
+
+			// validate 검사
+			if (false == validate(x, prev, curr)) {
+				prev->unlock(); curr->unlock();
+				continue;
+			}
+
+			if (curr->key == x) {
+				prev->unlock(); curr->unlock();
+				delete n_node;
+				return false;
+			}
+
+			else {
+				n_node->next = curr;
+				prev->next = n_node;
+				prev->unlock(); curr->unlock();
+				return true;
+			}
+		}
+	}
+
+	bool Remove(int x)
+	{
+		auto prev = &head;
+		auto curr = prev->next;
+		while (curr->key < x) {
+			prev->unlock();
+			prev = curr;
+			curr = curr->next;
+			curr->lock();
+		}
+		if (curr->key == x) {
+			prev->next = curr->next;
+			prev->unlock(); curr->unlock();
+			delete curr;
+			return true;
+		}
+		else {
+			prev->unlock(); curr->unlock();
+			return false;
+		}
+	}
+	bool Contains(int x)
+	{
+		auto prev = &head;
+		prev->lock();
+		auto curr = prev->next;
+		curr->lock();
+		while (curr->key < x) {
+			prev->unlock();
+			prev = curr;
+			curr = curr->next;
+			curr->lock();
+		}
+		if (curr->key == x) {
+			prev->unlock(); curr->unlock();
+			return true;
+		}
+		else {
+			prev->unlock(); curr->unlock();
+			return false;
+		}
+	}
+	void print20()
+	{
+		auto p = head.next;
+		for (int i = 0; i < 20; ++i) {
+			if (p == &tail) break;
+			std::cout << p->key << ", ";
+			p = p->next;
+		}
+		std::cout << std::endl;
+	}
+};
+
+O_SET my_set{};
 
 const int NUM_TEST = 4000000;
 const int KEY_RANGE = 1000;
