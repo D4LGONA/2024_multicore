@@ -21,9 +21,6 @@
     <ClCompile Include="set.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="set_fail.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="hw4.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
@@ -31,6 +28,24 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="21.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="22.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="소스.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="소스1.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="hw6_2022184015_김해님.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="소스2.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="LF_SET.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
