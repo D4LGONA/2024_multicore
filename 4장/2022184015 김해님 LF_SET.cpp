@@ -1,32 +1,43 @@
 #include <iostream>
 #include <thread>
-#include <mutex>
 #include <chrono>
 #include <vector>
 #include <array>
 #include <atomic>
+
+class LFNODE;
 
 class SPTR
 {
     std::atomic<long long> sptr;
 public:
     SPTR() : sptr(0) {}
+
+    void set_ptr_and_mark(LFNODE* new_p, bool mark)
+    {
+        long long value = reinterpret_cast<long long>(new_p);
+        if (mark) {
+            value |= 1;
+        }
+        sptr = value;
+    }
+
     LFNODE* get_ptr()
     {
         return reinterpret_cast<LFNODE*>(sptr & 0xFFFFFFFFFFFFFFFE);
     }
+
     bool get_removed()
     {
         return 1 == (sptr & 1);
     }
+
     bool CAS(LFNODE* old_p, LFNODE* new_p, bool old_m, bool new_m)
     {
         long long old_v = reinterpret_cast<long long>(old_p);
-        if (true == old_m) old_v = old_v | 1;
-        else { std::cout << "POINTER ERROR!!\n"; exit(-1); }
+        if (old_m) old_v |= 1;
         long long new_v = reinterpret_cast<long long>(new_p);
-        if (true == new_m) new_v = new_v | 1;
-        else { std::cout << "POINTER ERROR!!\n"; exit(-1); }
+        if (new_m) new_v |= 1;
         return std::atomic_compare_exchange_strong(&sptr, &old_v, new_v);
     }
 };
@@ -36,17 +47,21 @@ class LFNODE
 public:
     int key;
     SPTR next;
+
     LFNODE(int v) : key(v) {}
 };
 
 class LF_SET
 {
     LFNODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
+
 public:
     LF_SET()
     {
-        head.next.CAS(head.next.get_ptr(), &tail, false, false);
+        // head.next¸¦ tail·Î ÃÊ±âÈ­ (¸¶Å·µÇÁö ¾ÊÀº »óÅÂ·Î)
+        head.next.set_ptr_and_mark(&tail, false);
     }
+
     void clear()
     {
         LFNODE* curr = head.next.get_ptr();
@@ -55,11 +70,11 @@ public:
             delete curr;
             curr = next;
         }
-
-        while (!head.next.CAS(head.next.get_ptr(), &tail, false, false)) {
-        }
+        // head.next¸¦ ´Ù½Ã tail·Î ÃÊ±âÈ­
+        head.next.set_ptr_and_mark(&tail, false);
     }
-    bool validate(const int x, LFNODE* prev, LFNODE* curr)
+
+    bool validate(LFNODE* prev, LFNODE* curr)
     {
         return !prev->next.get_removed() && !curr->next.get_removed() && (curr == prev->next.get_ptr());
     }
@@ -72,52 +87,55 @@ public:
             find(prev, curr, x);
 
             if (curr->key == x) {
-                return false; // ì´ë¯¸ í‚¤ê°€ ì¡´ìž¬í•¨
+                return false; // ÀÌ¹Ì Å°°¡ Á¸ÀçÇÔ
             }
             else {
                 LFNODE* newNode = new LFNODE(x);
-                newNode->next.CAS(nullptr, curr, false, false); // newNodeì˜ nextë¥¼ currë¡œ ì„¤ì •
+                newNode->next.set_ptr_and_mark(curr, false); // »õ·Î¿î ³ëµåÀÇ next¸¦ ÇöÀç À§Ä¡·Î ¼³Á¤
                 if (prev->next.CAS(curr, newNode, false, false)) {
-                    return true; // ì„±ê³µì ìœ¼ë¡œ ì¶”ê°€
+                    return true; // ¼º°øÀûÀ¸·Î Ãß°¡
                 }
                 else {
-                    delete newNode; // ì‹¤íŒ¨ì‹œ ë©”ëª¨ë¦¬ í•´ì œ
+                    delete newNode; // ½ÇÆÐ½Ã ¸Þ¸ð¸® ÇØÁ¦
                 }
             }
         }
     }
-    bool Remove(int x) {
+
+    bool Remove(int x)
+    {
         while (true) {
             LFNODE* prev;
             LFNODE* curr;
             find(prev, curr, x);
 
             if (curr->key != x) {
-                return false; // í‚¤ê°€ ì¡´ìž¬í•˜ì§€ ì•ŠìŒ
+                return false; // Å°°¡ Á¸ÀçÇÏÁö ¾ÊÀ½
             }
 
             LFNODE* succ = curr->next.get_ptr();
-            if (!curr->next.CAS(succ, succ, false, true)) { // ë§ˆí‚¹ ì‹œë„
-                continue; // ë§ˆí‚¹ ì‹¤íŒ¨ì‹œ ìž¬ì‹œë„
+            if (!curr->next.CAS(succ, succ, false, true)) { // ¸¶Å· ½Ãµµ
+                continue; // ¸¶Å· ½ÇÆÐ½Ã Àç½Ãµµ
             }
 
-            // ë§ˆí‚¹ì— ì„±ê³µí–ˆìœ¼ë©´ ì„±ê³µ ë°˜í™˜, prev->nextë¥¼ ê°±ì‹ í•˜ëŠ” ê²ƒì€ ì‹œë„í•˜ì§€ë§Œ ì‹¤íŒ¨í•´ë„ ë¬´ë°©
+            // ¸¶Å·¿¡ ¼º°øÇßÀ¸¸é ¹Ù·Î ¼º°ø ¹ÝÈ¯. Æ÷ÀÎÅÍ °»½ÅÀº ½ÃµµÇÏÁö¸¸ ½ÇÆÐÇØµµ ¹«¹æ
             prev->next.CAS(curr, succ, false, false);
             return true;
         }
     }
 
-    bool Contains(int x) {
+    bool Contains(int x)
+    {
         LFNODE* prev;
         LFNODE* curr;
-        find(prev, curr, x); // find í•¨ìˆ˜ë¥¼ ì‚¬ìš©í•˜ì—¬ ì ì ˆí•œ ìœ„ì¹˜ë¥¼ ì°¾ìŒ
+        find(prev, curr, x);
 
-        return curr != &tail && curr->key == x && !curr->next.get_removed(); // ë§ˆí‚¹ ìƒíƒœ í™•ì¸
+        return curr != &tail && curr->key == x && !curr->next.get_removed();
     }
 
     void print20()
     {
-        auto p = head.next.get_ptr();
+        LFNODE* p = head.next.get_ptr();
         for (int i = 0; i < 20; ++i) {
             if (p == &tail) break;
             std::cout << p->key << ", ";
@@ -134,19 +152,18 @@ public:
             curr = prev->next.get_ptr();
 
             while (true) {
-                // ì²­ì†Œ
-                bool removed = false;
-                do {
-                    LFNODE* succ = curr->next.get_ptr();
-                    if (removed == true) {
-                        if (false == prev->next.CAS(curr, succ, false, false)) goto retry;
-                        curr = succ;
-                    }
-                } while (removed == false);
+                bool removed = curr->next.get_removed();
+                LFNODE* succ = curr->next.get_ptr();
 
-                while (curr->key >= x) return;
-                prev = curr;
-                curr = curr->next.get_ptr();
+                if (removed) {
+                    if (!prev->next.CAS(curr, succ, false, false)) goto retry;
+                    curr = succ;
+                }
+                else {
+                    if (curr->key >= x) return;
+                    prev = curr;
+                    curr = curr->next.get_ptr();
+                }
             }
         }
     }
@@ -157,17 +174,19 @@ LF_SET my_set;
 const int NUM_TEST = 4000000;
 const int KEY_RANGE = 1000;
 
-class HISTORY {
+class HISTORY
+{
 public:
     int op;
     int i_value;
     bool o_value;
+
     HISTORY(int o, int i, bool re) : op(o), i_value(i), o_value(re) {}
 };
 
 std::array<std::vector<HISTORY>, 16> history;
 
-template<class T>
+template <class T>
 void worker_check(int num_threads, int thread_id, T& my_set)
 {
     for (int i = 0; i < NUM_TEST / num_threads; ++i) {
@@ -192,10 +211,10 @@ void worker_check(int num_threads, int thread_id, T& my_set)
     }
 }
 
-template<class T>
+template <class T>
 void check_history(int num_threads, T& my_set)
 {
-    std::array <int, KEY_RANGE> survive = {};
+    std::array<int, KEY_RANGE> survive = {};
     std::cout << "Checking Consistency : ";
     if (history[0].size() == 0) {
         std::cout << "No history.\n";
@@ -203,100 +222,76 @@ void check_history(int num_threads, T& my_set)
     }
     for (int i = 0; i < num_threads; ++i) {
         for (auto& op : history[i]) {
-            if (false == op.o_value) continue;
-            if (op.op == 3) continue;
+            if (!op.o_value) continue;
             if (op.op == 0) survive[op.i_value]++;
             if (op.op == 1) survive[op.i_value]--;
         }
     }
     for (int i = 0; i < KEY_RANGE; ++i) {
-        int val = survive[i];
-        if (val < 0) {
-            std::cout << "ERROR. The value " << i << " removed while it is not in the set.\n";
+        if (survive[i] < 0) {
+            std::cout << "ERROR: The value " << i << " removed but not in the set.\n";
             exit(-1);
         }
-        else if (val > 1) {
-            std::cout << "ERROR. The value " << i << " is added while the set already have it.\n";
+        else if (survive[i] > 1) {
+            std::cout << "ERROR: The value " << i << " added but already exists in the set.\n";
             exit(-1);
         }
-        else if (val == 0) {
-            if (my_set.Contains(i)) {
-                std::cout << "ERROR. The value " << i << " should not exists.\n";
-                exit(-1);
-            }
+        else if (survive[i] == 0 && my_set.Contains(i)) {
+            std::cout << "ERROR: The value " << i << " should not exist.\n";
+            exit(-1);
         }
-        else if (val == 1) {
-            if (false == my_set.Contains(i)) {
-                std::cout << "ERROR. The value " << i << " shoud exists.\n";
-                exit(-1);
-            }
+        else if (survive[i] == 1 && !my_set.Contains(i)) {
+            std::cout << "ERROR: The value " << i << " should exist.\n";
+            exit(-1);
         }
     }
     std::cout << " OK\n";
 }
 
-template<class T>
-void benchmark(const int num_thread, T& my_set)
+template <class T>
+void benchmark(int num_thread, T& my_set)
 {
-    int key;
-
     for (int i = 0; i < NUM_TEST / num_thread; i++) {
+        int key = rand() % KEY_RANGE;
         switch (rand() % 3) {
-        case 0: key = rand() % KEY_RANGE;
-            my_set.Add(key);
-            break;
-        case 1: key = rand() % KEY_RANGE;
-            my_set.Remove(key);
-            break;
-        case 2: key = rand() % KEY_RANGE;
-            my_set.Contains(key);
-            break;
-        default: std::cout << "Error\n";
-            exit(-1);
+        case 0: my_set.Add(key); break;
+        case 1: my_set.Remove(key); break;
+        case 2: my_set.Contains(key); break;
         }
     }
 }
-
 
 int main()
 {
     using namespace std::chrono;
 
-    std::cout << "------ ê²€ì‚¬ ------" << std::endl;
-    for (int n = 1; n <= 32; n = n * 2) {
+    std::cout << "------ °Ë»ç ------" << std::endl;
+    for (int n = 1; n <= 32; n *= 2) {
         my_set.clear();
-        for (auto& v : history)
-            v.clear();
+        for (auto& v : history) v.clear();
         std::vector<std::thread> tv;
         auto start_t = high_resolution_clock::now();
         for (int i = 0; i < n; ++i) {
             tv.emplace_back(worker_check<LF_SET>, n, i, std::ref(my_set));
         }
-        for (auto& th : tv)
-            th.join();
+        for (auto& th : tv) th.join();
         auto end_t = high_resolution_clock::now();
-        auto exec_t = end_t - start_t;
-        size_t ms = duration_cast<milliseconds>(exec_t).count();
-        std::cout << n << " Threads,  " << ms << "ms.";
+        std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
         my_set.print20();
         check_history(n, my_set);
     }
 
-    // ì„±ëŠ¥ ì²´í¬
-    std::cout << "------ ì„±ëŠ¥ì²´í¬ ------" << std::endl;
-    for (int n = 1; n <= 32; n = n * 2) {
+    std::cout << "------ ¼º´É Ã¼Å© ------" << std::endl;
+    for (int n = 1; n <= 32; n *= 2) {
         my_set.clear();
         std::vector<std::thread> tv;
         auto start_t = high_resolution_clock::now();
         for (int i = 0; i < n; ++i) {
             tv.emplace_back(benchmark<LF_SET>, n, std::ref(my_set));
         }
-        for (auto& th : tv)
-            th.join();
+        for (auto& th : tv) th.join();
         auto end_t = high_resolution_clock::now();
-        auto exec_t = end_t - start_t;
-        size_t ms = duration_cast<milliseconds>(exec_t).count();
-        std::cout << n << " Threads,  " << ms << "ms.";
+        std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
         my_set.print20();
     }
 }

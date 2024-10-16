@@ -48,5 +48,8 @@
     <ClCompile Include="LF_SET.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="2022184015 김해님 LF_SET.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
