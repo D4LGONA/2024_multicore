@@ -571,140 +571,140 @@ int main()
 	using namespace std::chrono;
 
 	// case 1: 성긴 동기화
-	std::cout << "------ 성긴 동기화 검사 ------" << std::endl;
-	for (int n = 1; n <= 16; n = n * 2) {
-		my_set1.clear();
-		for (auto& v : history)
-			v.clear();
-		std::vector<std::thread> tv;
-		auto start_t = high_resolution_clock::now();
-		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(worker_check<C_SET>, n, i, std::ref(my_set1));
-		}
-		for (auto& th : tv)
-			th.join();
-		auto end_t = high_resolution_clock::now();
-		auto exec_t = end_t - start_t;
-		size_t ms = duration_cast<milliseconds>(exec_t).count();
-		std::cout << n << " Threads,  " << ms << "ms.";
-		my_set1.print20();
-		check_history(n, my_set1);
-	}
+	//std::cout << "------ 성긴 동기화 검사 ------" << std::endl;
+	//for (int n = 1; n <= 16; n = n * 2) {
+	//	my_set1.clear();
+	//	for (auto& v : history)
+	//		v.clear();
+	//	std::vector<std::thread> tv;
+	//	auto start_t = high_resolution_clock::now();
+	//	for (int i = 0; i < n; ++i) {
+	//		tv.emplace_back(worker_check<C_SET>, n, i, std::ref(my_set1));
+	//	}
+	//	for (auto& th : tv)
+	//		th.join();
+	//	auto end_t = high_resolution_clock::now();
+	//	auto exec_t = end_t - start_t;
+	//	size_t ms = duration_cast<milliseconds>(exec_t).count();
+	//	std::cout << n << " Threads,  " << ms << "ms.";
+	//	my_set1.print20();
+	//	check_history(n, my_set1);
+	//}
 
-	// case 2. 세밀한 동기화
-	std::cout << "------ 세밀한 동기화 검사 ------" << std::endl;
-	for (int n = 1; n <= 16; n = n * 2) {
-		my_set2.clear();
-		for (auto& v : history)
-			v.clear();
-		std::vector<std::thread> tv;
-		auto start_t = high_resolution_clock::now();
-		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(worker_check<F_SET>, n, i, std::ref(my_set2));
-		}
-		for (auto& th : tv)
-			th.join();
-		auto end_t = high_resolution_clock::now();
-		auto exec_t = end_t - start_t;
-		size_t ms = duration_cast<milliseconds>(exec_t).count();
-		std::cout << n << " Threads,  " << ms << "ms.";
-		my_set2.print20();
-		check_history(n, my_set2);
-	}
+	//// case 2. 세밀한 동기화
+	//std::cout << "------ 세밀한 동기화 검사 ------" << std::endl;
+	//for (int n = 1; n <= 16; n = n * 2) {
+	//	my_set2.clear();
+	//	for (auto& v : history)
+	//		v.clear();
+	//	std::vector<std::thread> tv;
+	//	auto start_t = high_resolution_clock::now();
+	//	for (int i = 0; i < n; ++i) {
+	//		tv.emplace_back(worker_check<F_SET>, n, i, std::ref(my_set2));
+	//	}
+	//	for (auto& th : tv)
+	//		th.join();
+	//	auto end_t = high_resolution_clock::now();
+	//	auto exec_t = end_t - start_t;
+	//	size_t ms = duration_cast<milliseconds>(exec_t).count();
+	//	std::cout << n << " Threads,  " << ms << "ms.";
+	//	my_set2.print20();
+	//	check_history(n, my_set2);
+	//}
 
-	// case 3. 낙천적 동기화
-	std::cout << "------ 낙천적 동기화 검사 ------" << std::endl;
-	for (int n = 1; n <= 16; n = n * 2) {
-		my_set3.clear();
-		for (auto& v : history)
-			v.clear();
-		std::vector<std::thread> tv;
-		auto start_t = high_resolution_clock::now();
-		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(worker_check<O_SET>, n, i, std::ref(my_set3));
-		}
-		for (auto& th : tv)
-			th.join();
-		auto end_t = high_resolution_clock::now();
-		auto exec_t = end_t - start_t;
-		size_t ms = duration_cast<milliseconds>(exec_t).count();
-		std::cout << n << " Threads,  " << ms << "ms.";
-		my_set3.print20();
-		check_history(n, my_set3);
-	}
+	//// case 3. 낙천적 동기화
+	//std::cout << "------ 낙천적 동기화 검사 ------" << std::endl;
+	//for (int n = 1; n <= 16; n = n * 2) {
+	//	my_set3.clear();
+	//	for (auto& v : history)
+	//		v.clear();
+	//	std::vector<std::thread> tv;
+	//	auto start_t = high_resolution_clock::now();
+	//	for (int i = 0; i < n; ++i) {
+	//		tv.emplace_back(worker_check<O_SET>, n, i, std::ref(my_set3));
+	//	}
+	//	for (auto& th : tv)
+	//		th.join();
+	//	auto end_t = high_resolution_clock::now();
+	//	auto exec_t = end_t - start_t;
+	//	size_t ms = duration_cast<milliseconds>(exec_t).count();
+	//	std::cout << n << " Threads,  " << ms << "ms.";
+	//	my_set3.print20();
+	//	check_history(n, my_set3);
+	//}
 
-	// case 4. 게으른 동기화
-	std::cout << "------ 게으른 동기화 검사 ------" << std::endl;
-	for (int n = 1; n <= 16; n = n * 2) {
-		my_set4.clear();
-		for (auto& v : history)
-			v.clear();
-		std::vector<std::thread> tv;
-		auto start_t = high_resolution_clock::now();
-		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(worker_check<L_SET>, n, i, std::ref(my_set4));
-		}
-		for (auto& th : tv)
-			th.join();
-		auto end_t = high_resolution_clock::now();
-		auto exec_t = end_t - start_t;
-		size_t ms = duration_cast<milliseconds>(exec_t).count();
-		std::cout << n << " Threads,  " << ms << "ms.";
-		my_set4.print20();
-		check_history(n, my_set4);
-	}
+	//// case 4. 게으른 동기화
+	//std::cout << "------ 게으른 동기화 검사 ------" << std::endl;
+	//for (int n = 1; n <= 16; n = n * 2) {
+	//	my_set4.clear();
+	//	for (auto& v : history)
+	//		v.clear();
+	//	std::vector<std::thread> tv;
+	//	auto start_t = high_resolution_clock::now();
+	//	for (int i = 0; i < n; ++i) {
+	//		tv.emplace_back(worker_check<L_SET>, n, i, std::ref(my_set4));
+	//	}
+	//	for (auto& th : tv)
+	//		th.join();
+	//	auto end_t = high_resolution_clock::now();
+	//	auto exec_t = end_t - start_t;
+	//	size_t ms = duration_cast<milliseconds>(exec_t).count();
+	//	std::cout << n << " Threads,  " << ms << "ms.";
+	//	my_set4.print20();
+	//	check_history(n, my_set4);
+	//}
 
-	// 성능 체크
-	std::cout << "------ 성긴 동기화 성능체크 ------" << std::endl;
-	for (int n = 1; n <= 16; n = n * 2) {
-		my_set1.clear();
-		std::vector<std::thread> tv;
-		auto start_t = high_resolution_clock::now();
-		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(benchmark<C_SET>, n, std::ref(my_set1));
-		}
-		for (auto& th : tv)
-			th.join();
-		auto end_t = high_resolution_clock::now();
-		auto exec_t = end_t - start_t;
-		size_t ms = duration_cast<milliseconds>(exec_t).count();
-		std::cout << n << " Threads,  " << ms << "ms.";
-		my_set1.print20();
-	}
+	//// 성능 체크
+	//std::cout << "------ 성긴 동기화 성능체크 ------" << std::endl;
+	//for (int n = 1; n <= 16; n = n * 2) {
+	//	my_set1.clear();
+	//	std::vector<std::thread> tv;
+	//	auto start_t = high_resolution_clock::now();
+	//	for (int i = 0; i < n; ++i) {
+	//		tv.emplace_back(benchmark<C_SET>, n, std::ref(my_set1));
+	//	}
+	//	for (auto& th : tv)
+	//		th.join();
+	//	auto end_t = high_resolution_clock::now();
+	//	auto exec_t = end_t - start_t;
+	//	size_t ms = duration_cast<milliseconds>(exec_t).count();
+	//	std::cout << n << " Threads,  " << ms << "ms.";
+	//	my_set1.print20();
+	//}
 
-	std::cout << "------ 세밀한 동기화 성능체크 ------" << std::endl;
-	for (int n = 1; n <= 16; n = n * 2) {
-		my_set2.clear();
-		std::vector<std::thread> tv;
-		auto start_t = high_resolution_clock::now();
-		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(benchmark<F_SET>, n, std::ref(my_set2));
-		}
-		for (auto& th : tv)
-			th.join();
-		auto end_t = high_resolution_clock::now();
-		auto exec_t = end_t - start_t;
-		size_t ms = duration_cast<milliseconds>(exec_t).count();
-		std::cout << n << " Threads,  " << ms << "ms.";
-		my_set2.print20();
-	}
+	//std::cout << "------ 세밀한 동기화 성능체크 ------" << std::endl;
+	//for (int n = 1; n <= 16; n = n * 2) {
+	//	my_set2.clear();
+	//	std::vector<std::thread> tv;
+	//	auto start_t = high_resolution_clock::now();
+	//	for (int i = 0; i < n; ++i) {
+	//		tv.emplace_back(benchmark<F_SET>, n, std::ref(my_set2));
+	//	}
+	//	for (auto& th : tv)
+	//		th.join();
+	//	auto end_t = high_resolution_clock::now();
+	//	auto exec_t = end_t - start_t;
+	//	size_t ms = duration_cast<milliseconds>(exec_t).count();
+	//	std::cout << n << " Threads,  " << ms << "ms.";
+	//	my_set2.print20();
+	//}
 
-	std::cout << "------ 낙천적 동기화 성능체크 ------" << std::endl;
-	for (int n = 1; n <= 16; n = n * 2) {
-		my_set3.clear();
-		std::vector<std::thread> tv;
-		auto start_t = high_resolution_clock::now();
-		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(benchmark<O_SET>, n, std::ref(my_set3));
-		}
-		for (auto& th : tv)
-			th.join();
-		auto end_t = high_resolution_clock::now();
-		auto exec_t = end_t - start_t;
-		size_t ms = duration_cast<milliseconds>(exec_t).count();
-		std::cout << n << " Threads,  " << ms << "ms.";
-		my_set3.print20();
-	}
+	//std::cout << "------ 낙천적 동기화 성능체크 ------" << std::endl;
+	//for (int n = 1; n <= 16; n = n * 2) {
+	//	my_set3.clear();
+	//	std::vector<std::thread> tv;
+	//	auto start_t = high_resolution_clock::now();
+	//	for (int i = 0; i < n; ++i) {
+	//		tv.emplace_back(benchmark<O_SET>, n, std::ref(my_set3));
+	//	}
+	//	for (auto& th : tv)
+	//		th.join();
+	//	auto end_t = high_resolution_clock::now();
+	//	auto exec_t = end_t - start_t;
+	//	size_t ms = duration_cast<milliseconds>(exec_t).count();
+	//	std::cout << n << " Threads,  " << ms << "ms.";
+	//	my_set3.print20();
+	//}
 
 	std::cout << "------ 게으른 동기화 성능체크 ------" << std::endl;
 	for (int n = 1; n <= 16; n = n * 2) {
