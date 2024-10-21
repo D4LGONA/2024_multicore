@@ -306,7 +306,7 @@ public:
         find(prev, curr, x);
 
         bool res = (curr != &tail && curr->key == x && !curr->next.get_removed());
-        ebr.start_epoch();
+        ebr.end_epoch();
         return res;
     }
 
