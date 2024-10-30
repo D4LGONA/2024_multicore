@@ -648,7 +648,90 @@ public:
 	}
 };
 
-STD_SET my_set;
+struct RESPONSE {
+	bool m_bool; // 리턴 값?
+};
+
+enum METHOD { M_ADD, M_REMOVE, M_CONTAINS, M_CLEAR, M_PRINT20 };
+struct INVOCATION {
+	METHOD m_method;
+	int x; // set에 넣어주는 파라미터
+};
+
+class SEQOBJECT { // std::set lock free 구현
+	std::set<int> m_set;
+public:
+	SEQOBJECT()
+	{
+	}
+	RESPONSE apply(INVOCATION& inv)
+	{
+		RESPONSE r{ true };
+		switch (inv.m_method)
+		{
+		case M_ADD:
+			r.m_bool = m_set.insert(inv.x).second;
+			break;
+
+		case M_REMOVE:
+			r.m_bool = (0 != m_set.count(inv.x));
+			if(r.m_bool == true)
+				m_set.erase(inv.x);
+			break;
+
+		case M_CONTAINS:
+			r.m_bool = (0 != m_set.count(inv.x));
+			break;
+		case M_CLEAR:
+			m_set.clear();
+			break;
+		case M_PRINT20:
+			int count = 20;
+			for (auto x : m_set) {
+				if (count-- == 0) break;
+				std::cout << x << ", ";
+			}
+			std::cout << std::endl;
+			break;
+		}
+		return r;
+	}
+};
+class STD_SEQ_SET { // std::set lock free 구현
+	SEQOBJECT m_set;
+public:
+	STD_SEQ_SET()
+	{
+	}
+	void clear()
+	{
+		INVOCATION a{ M_CLEAR, 0 };
+		m_set.apply(a);
+	}
+	bool Add(int x)
+	{
+		INVOCATION a{ M_ADD, x };
+		return m_set.apply(a).m_bool;
+		
+	}
+	bool Remove(int x)
+	{
+		INVOCATION a{ M_REMOVE, x };
+		return m_set.apply(a).m_bool;
+	}
+	bool Contains(int x)
+	{
+		INVOCATION a{ M_CONTAINS, x };
+		return m_set.apply(a).m_bool;
+	}
+	void print20()
+	{
+		INVOCATION a{ M_PRINT20, 0 };
+		m_set.apply(a);
+	}
+};
+
+STD_SEQ_SET my_set;
 //LF_SET my_set1;
 //EBR_L_SET my_set2;
 //EBR_LF_SET my_set3;
@@ -769,7 +852,7 @@ int main()
 {
 	using namespace std::chrono;
 
-	/*std::cout << "------ 검사 ------" << std::endl;
+	std::cout << "------ 검사 ------" << std::endl;
 	for (int n = 1; n <= MAX_THREADS; n *= 2) {
 		my_set.clear();
 		for (auto& v : history) v.clear();
@@ -784,7 +867,7 @@ int main()
 		my_set.print20();
 		check_history(n, my_set);
 	}
-	my_set.clear();*/
+	my_set.clear();
 
 	// 성능확인
 	std::cout << std::endl;
@@ -795,7 +878,7 @@ int main()
 		std::vector<std::thread> tv;
 		auto start_t = high_resolution_clock::now();
 		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(benchmark<STD_SET>, n, i, std::ref(my_set));
+			tv.emplace_back(benchmark<STD_SEQ_SET>, n, i, std::ref(my_set));
 		}
 		for (auto& th : tv) th.join();
 		auto end_t = high_resolution_clock::now();
