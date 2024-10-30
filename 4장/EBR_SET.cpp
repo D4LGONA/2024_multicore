@@ -696,6 +696,10 @@ public:
 		}
 		return r;
 	}
+	void clear()
+	{
+		m_set.clear();
+	}
 };
 class STD_SEQ_SET { // std::set lock free 구현
 	SEQOBJECT m_set;
@@ -778,6 +782,18 @@ public:
 		}
 		return std_set.apply(inv); // prefer가 적용되고 난 후의 상태 반환
 	}
+	void clear()
+	{
+		U_NODE* p = tail.next;
+		while (nullptr != p) {
+			U_NODE* old_p = p;
+			p = p->next;
+			delete old_p;
+		}
+		tail.next = nullptr;
+		for (auto& h : m_head)
+			h = &tail;
+	}
 };
 
 class STD_LF_SET { // std::set lock free 구현
@@ -786,10 +802,11 @@ public:
 	STD_LF_SET()
 	{
 	}
-	void clear()
+	void clear() // 로그에 넣지 말고 진짜 clear 해줘야 함
 	{
-		INVOCATION a{ M_CLEAR, 0 };
-		m_set.apply(a);
+		/*INVOCATION a{ M_CLEAR, 0 };
+		m_set.apply(a);*/
+		m_set.clear();
 	}
 	bool Add(int x)
 	{
