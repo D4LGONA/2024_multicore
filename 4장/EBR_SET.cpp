@@ -731,12 +731,95 @@ public:
 	}
 };
 
-STD_SEQ_SET my_set;
+class U_NODE {
+public:
+	INVOCATION m_inv;
+	int m_seq;
+	U_NODE* volatile next;
+};
+
+class LFUNV_OBJECT {
+	U_NODE* volatile m_head[MAX_THREADS];
+	U_NODE tail;
+	U_NODE* get_max_head() // 제일끝에잇는 노드 검색해 리턴..?
+	{
+		U_NODE* h = m_head[0];
+		for (int i = 1; i < MAX_THREADS; ++i)
+			if (h->m_seq < m_head[i]->m_seq)
+				h = m_head[i];
+		return h;
+	}
+public:
+	LFUNV_OBJECT() {
+		tail.m_seq = 0;
+		tail.next = nullptr;
+		for (auto& h : m_head)
+			h = &tail;
+	}
+	RESPONSE apply(INVOCATION& inv)
+	{
+		U_NODE* prefer = new U_NODE{ inv, 0, nullptr };
+		while (0 == prefer->m_seq) {
+			U_NODE* head = get_max_head(); // 가장 큰 헤드값 얻기
+			long long temp = 0;
+			std::atomic_compare_exchange_strong(
+				reinterpret_cast<volatile std::atomic_llong*>(&head->next), 
+				&temp, reinterpret_cast<long long>(prefer)); // next에 prefer 삽입을 시도한것 ?
+			U_NODE* after = head->next; // 이제는.. nullptr이 아니다?
+			after->m_seq = head->m_seq + 1;
+			m_head[thread_id] = after;
+		}
+		// prefer 삽입을 성공하면
+		SEQOBJECT std_set;
+		U_NODE* p = tail.next;
+		while (p != prefer) { // 순회하면서 현재의 log들 적용
+			std_set.apply(p->m_inv);
+			p = p->next;
+		}
+		return std_set.apply(inv); // prefer가 적용되고 난 후의 상태 반환
+	}
+};
+
+class STD_LF_SET { // std::set lock free 구현
+	LFUNV_OBJECT m_set;
+public:
+	STD_LF_SET()
+	{
+	}
+	void clear()
+	{
+		INVOCATION a{ M_CLEAR, 0 };
+		m_set.apply(a);
+	}
+	bool Add(int x)
+	{
+		INVOCATION a{ M_ADD, x };
+		return m_set.apply(a).m_bool;
+
+	}
+	bool Remove(int x)
+	{
+		INVOCATION a{ M_REMOVE, x };
+		return m_set.apply(a).m_bool;
+	}
+	bool Contains(int x)
+	{
+		INVOCATION a{ M_CONTAINS, x };
+		return m_set.apply(a).m_bool;
+	}
+	void print20() // 얘 적용할때마다 화면에 출력이 됨... 그렇지 않게 해야죵
+	{
+		INVOCATION a{ M_PRINT20, 0 };
+		m_set.apply(a);
+	}
+};
+
+STD_LF_SET my_set;
 //LF_SET my_set1;
 //EBR_L_SET my_set2;
 //EBR_LF_SET my_set3;
 
-const int NUM_TEST = 4000000;
+const int NUM_TEST = 4000;
 const int KEY_RANGE = 1000;
 
 class HISTORY
@@ -859,7 +942,7 @@ int main()
 		std::vector<std::thread> tv;
 		auto start_t = high_resolution_clock::now();
 		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(worker_check<STD_SET>, n, i, std::ref(my_set));
+			tv.emplace_back(worker_check<STD_LF_SET>, n, i, std::ref(my_set));
 		}
 		for (auto& th : tv) th.join();
 		auto end_t = high_resolution_clock::now();
@@ -878,7 +961,7 @@ int main()
 		std::vector<std::thread> tv;
 		auto start_t = high_resolution_clock::now();
 		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(benchmark<STD_SEQ_SET>, n, i, std::ref(my_set));
+			tv.emplace_back(benchmark<STD_LF_SET>, n, i, std::ref(my_set));
 		}
 		for (auto& th : tv) th.join();
 		auto end_t = high_resolution_clock::now();
