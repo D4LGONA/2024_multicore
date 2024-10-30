@@ -6,6 +6,9 @@
 #include <array>
 #include <atomic>
 #include <queue>
+#include <set>
+//#include <concurrent_unordered_set.h> // 락킹을 걸지 않고 멀티스레드에서 실행가능.
+// add는 되는데 remove가 안된다..?
 
 constexpr int MAX_THREADS = 16;
 class LFNODE; // 전방선언
@@ -122,6 +125,7 @@ public:
 		}
 		m_free_queue.pop();
 		p->key = x;
+		p->next.set_ptr(nullptr);
 		return p;
 	}
 };
@@ -461,13 +465,22 @@ public:
 	bool Contains(int x)
 	{
 		ebr.start_epoch();
-		LFNODE* prev;
-		LFNODE* curr;
-		Find(x, prev, curr);
-
-		bool res = (curr != &tail && curr->key == x && !curr->next.get_removed());
+		LFNODE* curr = head.next.get_ptr();
+		while (curr->key < x) {
+			curr = curr->next.get_ptr();
+		}
+		bool result = (false == curr->next.get_removed()) && (curr->key == x);
 		ebr.end_epoch();
-		return res;
+		return result;
+
+		//ebr.start_epoch();
+		//LFNODE* prev;
+		//LFNODE* curr;
+		////Find(x, prev, curr);
+
+		//bool res = (curr != &tail && curr->key == x && !curr->next.get_removed());
+		//ebr.end_epoch();
+		//return res;
 	}
 	void print20()
 	{
@@ -588,12 +601,57 @@ public:
 	}
 };
 
+class DUMMYMUTEX {
+public:
+	void lock() {}
+	void unlock() {}
+};
+class STD_SET { // std::set lock free 구현
+	std::set <int>m_set;
+	std::mutex set_lock;
+public:
+	STD_SET()
+	{
+	}
+	void clear()
+	{
+		m_set.clear();
+	}
+	bool Add(int x)
+	{
+		// locking을 한 블럭에서 빠져나올 때 unlock을 해줌.
+		std::lock_guard<std::mutex> aa{ set_lock };
+		return m_set.insert(x).second;
+	}
+	bool Remove(int x)
+	{
+		std::lock_guard<std::mutex> aa{ set_lock };
+		if (0 != m_set.count(x)) {
+			m_set.erase(x);
+			return true;
+		}
+		return false;
+	}
+	bool Contains(int x)
+	{
+		std::lock_guard<std::mutex> aa{ set_lock };
+		return 0 != m_set.count(x);
+	}
+	void print20()
+	{
+		int count = 20;
+		for (auto x : m_set) {
+			if (count-- == 0) break;
+			std::cout << x << ", ";
+		}
+		std::cout << std::endl;
+	}
+};
 
-
-L_SET my_set;
-LF_SET my_set1;
-EBR_L_SET my_set2;
-EBR_LF_SET my_set3;
+STD_SET my_set;
+//LF_SET my_set1;
+//EBR_L_SET my_set2;
+//EBR_LF_SET my_set3;
 
 const int NUM_TEST = 4000000;
 const int KEY_RANGE = 1000;
@@ -633,6 +691,16 @@ void worker_check(int num_threads, int th_id, T& my_set)
 			break;
 		}
 		}
+	}
+	while (false == m_free_queue.empty()) {
+		auto p = m_free_queue.front();
+		m_free_queue.pop();
+		delete p;
+	}
+	while (false == m_l_free_queue.empty()) {
+		auto p = m_free_queue.front();
+		m_free_queue.pop();
+		delete p;
 	}
 }
 
@@ -685,149 +753,55 @@ void benchmark(int num_thread, const int th_id, T& my_set)
 		case 2: my_set.Contains(key); break;
 		}
 	}
+	while (false == m_free_queue.empty()) {
+		auto p = m_free_queue.front();
+		m_free_queue.pop();
+		delete p;
+	}
+	while (false == m_l_free_queue.empty()) {
+		auto p = m_free_queue.front();
+		m_free_queue.pop();
+		delete p;
+	}
 }
 
 int main()
 {
 	using namespace std::chrono;
 
-	//std::cout << "------ 게으른 검사 ------" << std::endl;
-	//for (int n = 1; n <= MAX_THREADS; n *= 2) {
-	//	my_set.clear();
-	//	for (auto& v : history) v.clear();
-	//	std::vector<std::thread> tv;
-	//	auto start_t = high_resolution_clock::now();
-	//	for (int i = 0; i < n; ++i) {
-	//		tv.emplace_back(worker_check<L_SET>, n, i, std::ref(my_set));
-	//	}
-	//	for (auto& th : tv) th.join();
-	//	auto end_t = high_resolution_clock::now();
-	//	std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
-	//	my_set.print20();
-	//	check_history(n, my_set);
-	//}
-	//my_set.clear();
-	//
-	//std::cout << std::endl;
-	//std::cout << "------ LockFree 검사 ------" << std::endl;
-	//for (int n = 1; n <= MAX_THREADS; n *= 2) {
-	//	my_set1.clear();
-	//	for (auto& v : history) v.clear();
-	//	std::vector<std::thread> tv;
-	//	auto start_t = high_resolution_clock::now();
-	//	for (int i = 0; i < n; ++i) {
-	//		tv.emplace_back(worker_check<LF_SET>, n, i, std::ref(my_set1));
-	//	}
-	//	for (auto& th : tv) th.join();
-	//	auto end_t = high_resolution_clock::now();
-	//	std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
-	//	my_set1.print20();
-	//	check_history(n, my_set1);
-	//}
-	//my_set1.clear();
-
-	//std::cout << std::endl;
-	//std::cout << "------ EBR 게으른 검사 ------" << std::endl;
-	//for (int n = 1; n <= MAX_THREADS; n *= 2) {
-	//	my_set2.clear();
-	//	for (auto& v : history) v.clear();
-	//	std::vector<std::thread> tv;
-	//	auto start_t = high_resolution_clock::now();
-	//	for (int i = 0; i < n; ++i) {
-	//		tv.emplace_back(worker_check<EBR_L_SET>, n, i, std::ref(my_set2));
-	//	}
-	//	for (auto& th : tv) th.join();
-	//	auto end_t = high_resolution_clock::now();
-	//	std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
-	//	my_set2.print20();
-	//	check_history(n, my_set2);
-	//}
-	//my_set2.clear();
-
-	//std::cout << std::endl;
-	//std::cout << "------ EBR LockFree 검사 ------" << std::endl;
-	//for (int n = 1; n <= MAX_THREADS; n *= 2) {
-	//	my_set3.clear();
-	//	for (auto& v : history) v.clear();
-	//	std::vector<std::thread> tv;
-	//	auto start_t = high_resolution_clock::now();
-	//	for (int i = 0; i < n; ++i) {
-	//		tv.emplace_back(worker_check<EBR_LF_SET>, n, i, std::ref(my_set3));
-	//	}
-	//	for (auto& th : tv) th.join();
-	//	auto end_t = high_resolution_clock::now();
-	//	std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
-	//	my_set3.print20();
-	//	check_history(n, my_set3);
-	//}
-	//my_set3.clear();
-
-	//// 성능확인
-	//std::cout << std::endl;
-	//std::cout << "------ 게으른 성능 ------" << std::endl;
-	//for (int n = 1; n <= MAX_THREADS; n *= 2) {
-	//	my_set.clear();
-	//	for (auto& v : history) v.clear();
-	//	std::vector<std::thread> tv;
-	//	auto start_t = high_resolution_clock::now();
-	//	for (int i = 0; i < n; ++i) {
-	//		tv.emplace_back(benchmark<L_SET>, n, i, std::ref(my_set));
-	//	}
-	//	for (auto& th : tv) th.join();
-	//	auto end_t = high_resolution_clock::now();
-	//	std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
-	//	my_set.print20();
-	//}
-	//my_set.clear();
-
-	//std::cout << std::endl;
-	//std::cout << "------ LockFree 성능 ------" << std::endl;
-	//for (int n = 1; n <= MAX_THREADS; n *= 2) {
-	//	my_set1.clear();
-	//	for (auto& v : history) v.clear();
-	//	std::vector<std::thread> tv;
-	//	auto start_t = high_resolution_clock::now();
-	//	for (int i = 0; i < n; ++i) {
-	//		tv.emplace_back(benchmark<LF_SET>, n, i, std::ref(my_set1));
-	//	}
-	//	for (auto& th : tv) th.join();
-	//	auto end_t = high_resolution_clock::now();
-	//	std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
-	//	my_set1.print20();
-	//}
-	//my_set1.clear();
-
-	//std::cout << std::endl;
-	//std::cout << "------ EBR 게으른 성능 ------" << std::endl;
-	//for (int n = 1; n <= MAX_THREADS; n *= 2) {
-	//	my_set2.clear();
-	//	for (auto& v : history) v.clear();
-	//	std::vector<std::thread> tv;
-	//	auto start_t = high_resolution_clock::now();
-	//	for (int i = 0; i < n; ++i) {
-	//		tv.emplace_back(benchmark<EBR_L_SET>, n, i, std::ref(my_set2));
-	//	}
-	//	for (auto& th : tv) th.join();
-	//	auto end_t = high_resolution_clock::now();
-	//	std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
-	//	my_set2.print20();
-	//}
-	//my_set2.clear();
-
-	std::cout << std::endl;
-	std::cout << "------ EBR LockFree 성능 ------" << std::endl;
+	/*std::cout << "------ 검사 ------" << std::endl;
 	for (int n = 1; n <= MAX_THREADS; n *= 2) {
-		my_set3.clear();
+		my_set.clear();
 		for (auto& v : history) v.clear();
 		std::vector<std::thread> tv;
 		auto start_t = high_resolution_clock::now();
 		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(benchmark<EBR_LF_SET>, n, i, std::ref(my_set3));
+			tv.emplace_back(worker_check<STD_SET>, n, i, std::ref(my_set));
 		}
 		for (auto& th : tv) th.join();
 		auto end_t = high_resolution_clock::now();
-		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms.";
-		my_set3.print20();
+		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
+		my_set.print20();
+		check_history(n, my_set);
 	}
-	my_set3.clear();
+	my_set.clear();*/
+
+	// 성능확인
+	std::cout << std::endl;
+	std::cout << "------ 성능 ------" << std::endl;
+	for (int n = 1; n <= MAX_THREADS; n *= 2) {
+		my_set.clear();
+		for (auto& v : history) v.clear();
+		std::vector<std::thread> tv;
+		auto start_t = high_resolution_clock::now();
+		for (int i = 0; i < n; ++i) {
+			tv.emplace_back(benchmark<STD_SET>, n, i, std::ref(my_set));
+		}
+		for (auto& th : tv) th.join();
+		auto end_t = high_resolution_clock::now();
+		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
+		my_set.print20();
+	}
+	my_set.clear();
+
 }
