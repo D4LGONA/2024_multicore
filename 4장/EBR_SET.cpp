@@ -675,8 +675,10 @@ public:
 
 		case M_REMOVE:
 			r.m_bool = (0 != m_set.count(inv.x));
-			if(r.m_bool == true)
+			if (r.m_bool == true)
 				m_set.erase(inv.x);
+			else
+				r.m_bool = false;
 			break;
 
 		case M_CONTAINS:
@@ -833,7 +835,7 @@ class WF_UNV_OBJECT {
 	U_NODE* volatile announce[MAX_THREADS];
 	U_NODE* volatile m_head[MAX_THREADS];
 	U_NODE tail;
-	SEQOBJECT std_set;
+	
 
 	U_NODE* get_max_head() {
 		U_NODE* h = m_head[0];
@@ -854,40 +856,35 @@ public:
 	}
 
 	RESPONSE apply(INVOCATION& inv) {
-		int i = thread_id;
-		announce[i] = new U_NODE{};
-		announce[i]->m_inv = inv;
-		m_head[i] = get_max_head();
-
-		while (announce[i]->m_seq == 0) {
-			U_NODE* before = m_head[i];
+		announce[thread_id] =  new U_NODE{ inv, 0, nullptr };
+		m_head[thread_id] = get_max_head(); // 가장 큰 헤드값 얻기
+		while (0 == announce[thread_id]->m_seq) {
+			U_NODE* before = m_head[thread_id];
 			U_NODE* help = announce[(before->m_seq + 1) % MAX_THREADS];
 			U_NODE* prefer;
-			if (help->m_seq == 0) 
-				prefer = help;
-			else 
-				prefer = announce[i];
-
-			U_NODE* after = nullptr;
+			if (help->m_seq == 0) prefer = help;
+			else prefer = announce[thread_id];
 			long long temp = 0;
-
 			std::atomic_compare_exchange_strong(
-				reinterpret_cast<volatile std::atomic_llong*>(&before->next),
-				&temp, reinterpret_cast<long long>(prefer));
-
-			after = before->next;
+				reinterpret_cast<volatile std::atomic_llong*>(&m_head[thread_id]->next),
+				&temp, reinterpret_cast<long long>(prefer)); // next에 prefer 삽입을 시도한것 ?
+			U_NODE* after = m_head[thread_id]->next; 
+			before->next = after;
 			after->m_seq = before->m_seq + 1;
-			m_head[i] = after;
+			m_head[thread_id] = after;
 		}
 
-		U_NODE* current = tail.next;
-		while (current != announce[i]) {
-			std_set.apply(current->m_inv);
-			current = current->next;
+		// prefer 삽입을 성공하면
+		SEQOBJECT std_set;
+		U_NODE* p = tail.next;
+		while (p != announce[thread_id]) { // 순회하면서 현재의 log들 적용
+			std_set.apply(p->m_inv);
+			p = p->next;
 		}
-
-		return std_set.apply(announce[i]->m_inv);
+		m_head[thread_id] = announce[thread_id];
+		return std_set.apply(inv); // prefer가 적용되고 난 후의 상태 반환
 	}
+
 
 	void clear() {
 		U_NODE* p = tail.next;
@@ -936,8 +933,9 @@ public:
 STD_WF_SET my_set;
 STD_SET my_set1;
 LF_SET my_set2;
+STD_LF_SET my_set3;
 
-const int NUM_TEST = 4000;
+const int NUM_TEST = 40000;
 const int KEY_RANGE = 1000;
 
 class HISTORY
@@ -1053,7 +1051,7 @@ int main()
 {
 	using namespace std::chrono;
 
-	std::cout << "------ 검사 ------" << std::endl;
+	std::cout << "------ STD_WF_SET 검사 ------" << std::endl;
 	for (int n = 1; n <= MAX_THREADS; n *= 2) {
 		my_set.clear();
 		for (auto& v : history) v.clear();
@@ -1070,9 +1068,60 @@ int main()
 	}
 	my_set.clear();
 
+	std::cout << "------ STD_SET 검사 ------" << std::endl;
+	for (int n = 1; n <= MAX_THREADS; n *= 2) {
+		my_set1.clear();
+		for (auto& v : history) v.clear();
+		std::vector<std::thread> tv;
+		auto start_t = high_resolution_clock::now();
+		for (int i = 0; i < n; ++i) {
+			tv.emplace_back(worker_check<STD_SET>, n, i, std::ref(my_set1));
+		}
+		for (auto& th : tv) th.join();
+		auto end_t = high_resolution_clock::now();
+		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
+		check_history(n, my_set1);
+		my_set1.print20();
+	}
+	my_set1.clear();
+
+	std::cout << "------ LF_SET 검사 ------" << std::endl;
+	for (int n = 1; n <= MAX_THREADS; n *= 2) {
+		my_set2.clear();
+		for (auto& v : history) v.clear();
+		std::vector<std::thread> tv;
+		auto start_t = high_resolution_clock::now();
+		for (int i = 0; i < n; ++i) {
+			tv.emplace_back(worker_check<LF_SET>, n, i, std::ref(my_set2));
+		}
+		for (auto& th : tv) th.join();
+		auto end_t = high_resolution_clock::now();
+		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
+		check_history(n, my_set2);
+		my_set2.print20();
+	}
+	my_set2.clear();
+
+	std::cout << "------ STD_LF_SET 검사 ------" << std::endl;
+	for (int n = 1; n <= MAX_THREADS; n *= 2) {
+		my_set3.clear();
+		for (auto& v : history) v.clear();
+		std::vector<std::thread> tv;
+		auto start_t = high_resolution_clock::now();
+		for (int i = 0; i < n; ++i) {
+			tv.emplace_back(worker_check<STD_LF_SET>, n, i, std::ref(my_set3));
+		}
+		for (auto& th : tv) th.join();
+		auto end_t = high_resolution_clock::now();
+		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
+		check_history(n, my_set3);
+		my_set3.print20();
+	}
+	my_set.clear();
+
 	// 성능확인
 	std::cout << std::endl;
-	std::cout << "------ 성능 ------" << std::endl;
+	std::cout << "------ STD_WF_SET 성능 ------" << std::endl;
 	for (int n = 1; n <= MAX_THREADS; n *= 2) {
 		my_set.clear();
 		for (auto& v : history) v.clear();
@@ -1087,4 +1136,53 @@ int main()
 		my_set.print20();
 	}
 	my_set.clear();
+
+	std::cout << "------ STD_SET 성능 ------" << std::endl;
+	for (int n = 1; n <= MAX_THREADS; n *= 2) {
+		my_set1.clear();
+		for (auto& v : history) v.clear();
+		std::vector<std::thread> tv;
+		auto start_t = high_resolution_clock::now();
+		for (int i = 0; i < n; ++i) {
+			tv.emplace_back(benchmark<STD_SET>, n, i, std::ref(my_set1));
+		}
+		for (auto& th : tv) th.join();
+		auto end_t = high_resolution_clock::now();
+		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
+		my_set1.print20();
+	}
+	my_set1.clear();
+
+	std::cout << "------ LF_SET 성능 ------" << std::endl;
+	for (int n = 1; n <= MAX_THREADS; n *= 2) {
+		my_set2.clear();
+		for (auto& v : history) v.clear();
+		std::vector<std::thread> tv;
+		auto start_t = high_resolution_clock::now();
+		for (int i = 0; i < n; ++i) {
+			tv.emplace_back(benchmark<LF_SET>, n, i, std::ref(my_set2));
+		}
+		for (auto& th : tv) th.join();
+		auto end_t = high_resolution_clock::now();
+		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
+		my_set2.print20();
+	}
+	my_set2.clear();
+
+	std::cout << "------ STD_LF_SET 성능 ------" << std::endl;
+	for (int n = 1; n <= MAX_THREADS; n *= 2) {
+		my_set3.clear();
+		for (auto& v : history) v.clear();
+		std::vector<std::thread> tv;
+		auto start_t = high_resolution_clock::now();
+		for (int i = 0; i < n; ++i) {
+			tv.emplace_back(benchmark<STD_LF_SET>, n, i, std::ref(my_set3));
+		}
+		for (auto& th : tv) th.join();
+		auto end_t = high_resolution_clock::now();
+		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
+		my_set3.print20();
+	}
+	my_set3.clear();
 }
+
