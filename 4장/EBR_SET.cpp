@@ -804,8 +804,6 @@ public:
 	}
 	void clear() // 로그에 넣지 말고 진짜 clear 해줘야 함
 	{
-		/*INVOCATION a{ M_CLEAR, 0 };
-		m_set.apply(a);*/
 		m_set.clear();
 	}
 	bool Add(int x)
@@ -831,10 +829,113 @@ public:
 	}
 };
 
-STD_LF_SET my_set;
-//LF_SET my_set1;
-//EBR_L_SET my_set2;
-//EBR_LF_SET my_set3;
+class WF_UNV_OBJECT {
+	U_NODE* volatile announce[MAX_THREADS];
+	U_NODE* volatile m_head[MAX_THREADS];
+	U_NODE tail;
+	SEQOBJECT std_set;
+
+	U_NODE* get_max_head() {
+		U_NODE* h = m_head[0];
+		for (int i = 1; i < MAX_THREADS; ++i)
+			if (h->m_seq < m_head[i]->m_seq)
+				h = m_head[i];
+		return h;
+	}
+
+public:
+	WF_UNV_OBJECT() {
+		tail.m_seq = 1;
+		tail.next = nullptr;
+		for (int i = 0; i < MAX_THREADS; ++i) {
+			m_head[i] = &tail;
+			announce[i] = &tail;
+		}
+	}
+
+	RESPONSE apply(INVOCATION& inv) {
+		int i = thread_id;
+		announce[i] = new U_NODE{};
+		announce[i]->m_inv = inv;
+		m_head[i] = get_max_head();
+
+		while (announce[i]->m_seq == 0) {
+			U_NODE* before = m_head[i];
+			U_NODE* help = announce[(before->m_seq + 1) % MAX_THREADS];
+			U_NODE* prefer;
+			if (help->m_seq == 0) 
+				prefer = help;
+			else 
+				prefer = announce[i];
+
+			U_NODE* after = nullptr;
+			long long temp = 0;
+
+			std::atomic_compare_exchange_strong(
+				reinterpret_cast<volatile std::atomic_llong*>(&before->next),
+				&temp, reinterpret_cast<long long>(prefer));
+
+			after = before->next;
+			after->m_seq = before->m_seq + 1;
+			m_head[i] = after;
+		}
+
+		U_NODE* current = tail.next;
+		while (current != announce[i]) {
+			std_set.apply(current->m_inv);
+			current = current->next;
+		}
+
+		return std_set.apply(announce[i]->m_inv);
+	}
+
+	void clear() {
+		U_NODE* p = tail.next;
+		while (nullptr != p) {
+			U_NODE* old_p = p;
+			p = p->next;
+			delete old_p;
+		}
+		tail.next = nullptr;
+		for (int i = 0; i < MAX_THREADS; ++i) {
+			m_head[i] = &tail;
+			announce[i] = &tail;
+		}
+	}
+};
+
+class STD_WF_SET {
+	WF_UNV_OBJECT m_set;
+
+public:
+	void clear() {
+		m_set.clear();
+	}
+
+	bool Add(int x) {
+		INVOCATION a{ M_ADD, x };
+		return m_set.apply(a).m_bool;
+	}
+
+	bool Remove(int x) {
+		INVOCATION a{ M_REMOVE, x };
+		return m_set.apply(a).m_bool;
+	}
+
+	bool Contains(int x) {
+		INVOCATION a{ M_CONTAINS, x };
+		return m_set.apply(a).m_bool;
+	}
+
+	void print20() {
+		INVOCATION a{ M_PRINT20, 0 };
+		m_set.apply(a);
+	}
+};
+
+STD_WF_SET my_set;
+STD_SET my_set1;
+LF_SET my_set2;
 
 const int NUM_TEST = 4000;
 const int KEY_RANGE = 1000;
@@ -959,13 +1060,13 @@ int main()
 		std::vector<std::thread> tv;
 		auto start_t = high_resolution_clock::now();
 		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(worker_check<STD_LF_SET>, n, i, std::ref(my_set));
+			tv.emplace_back(worker_check<STD_WF_SET>, n, i, std::ref(my_set));
 		}
 		for (auto& th : tv) th.join();
 		auto end_t = high_resolution_clock::now();
 		std::cout << n << " Threads, " << duration_cast<milliseconds>(end_t - start_t).count() << "ms." << std::endl;
-		my_set.print20();
 		check_history(n, my_set);
+		my_set.print20();
 	}
 	my_set.clear();
 
@@ -978,7 +1079,7 @@ int main()
 		std::vector<std::thread> tv;
 		auto start_t = high_resolution_clock::now();
 		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(benchmark<STD_LF_SET>, n, i, std::ref(my_set));
+			tv.emplace_back(benchmark<STD_WF_SET>, n, i, std::ref(my_set));
 		}
 		for (auto& th : tv) th.join();
 		auto end_t = high_resolution_clock::now();
@@ -986,5 +1087,4 @@ int main()
 		my_set.print20();
 	}
 	my_set.clear();
-
 }
