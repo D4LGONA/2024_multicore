@@ -10,7 +10,7 @@
 //#include <concurrent_unordered_set.h> // 락킹을 걸지 않고 멀티스레드에서 실행가능.
 // add는 되는데 remove가 안된다..?
 
-constexpr int MAX_THREADS = 16;
+constexpr int MAX_THREADS = 32;
 class LFNODE; // 전방선언
 
 class SPTR
