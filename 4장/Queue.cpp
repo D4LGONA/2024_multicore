@@ -67,9 +67,7 @@ public:
 		std::cout << std::endl;
 	}
 };
-
 std::atomic_bool stop = false;
-
 class LF_QUEUE {
 	NODE* volatile head;
 	NODE* volatile tail;
@@ -111,14 +109,132 @@ public:
 			NODE* next = first->next;
 			NODE* last = tail;
 			if (first != head) continue;
-			if (nullptr == next) return -1;
+			if (nullptr == next) return -1; // empty queue
 			if (first == last) {
 				CAS(&tail, last, next);
 				continue;
 			}
 			int value = next->key;
 			if (false == CAS(&head, first, next)) continue;
-			//delete first;
+			delete first;
+			// delete를 하면 안되는 이유: delete한 노드를 누군가 바라보니까
+			// 
+			return value;
+		}
+	}
+	void print20()
+	{
+		for (int i = 0; i < 20; ++i) {
+			int v = Dequeue();
+			if (v == -1) break; // 비었다는 뜻
+			std::cout << v << ", ";
+		}
+		std::cout << std::endl;
+	}
+};
+
+class STPTR
+{
+	//NODE* volatile m_ptr; // 이런식으로 선언하면 프로그래밍 할 때 실수할수 잇음
+public:
+	std::atomic_llong m_stptr;
+	STPTR(STNODE* p, int st)
+	{
+		set_ptr(p, st);
+	}
+	STPTR(const STPTR& new_v)
+	{
+		m_stptr = new_v.m_stptr.load();
+	}
+	void set_ptr(STNODE* p, int st)
+	{
+		long long t = reinterpret_cast<int>(p) << 32;
+		m_stptr = t << 32 + st;
+	}
+	long long get_value() { return m_stptr; }
+	void copy(const STPTR& new_v)
+	{
+		m_stptr = new_v.m_stptr.load();
+	}
+
+	STNODE* get_ptr()
+	{
+		return reinterpret_cast<STNODE*> (m_stptr >> 32);
+	}
+	int get_stamp()
+	{
+		return m_stptr & 0xFFFFFFFF; // 32비트만 꺼냄..?
+	}
+
+
+	bool CAS(STNODE* old_ptr, STNODE* new_ptr, int old_st, int new_st)
+	{
+		long long old_v = reinterpret_cast<int>(old_ptr) << 32;
+		old_v = old_v << 32 + old_st;
+		long long new_v = reinterpret_cast<int>(new_ptr) << 32;
+		new_v = new_v << 32 + new_st;
+		return std::atomic_compare_exchange_strong(&m_stptr, &old_v, new_v);
+	}
+};
+
+class STNODE
+{
+public:
+	int	key;
+	STPTR next;
+	STNODE(int x) : key(x), next(nullptr, 0) {}
+};  
+
+class ST_LF_QUEUE {
+	STPTR head{nullptr, 0}, tail{ nullptr, 0 };
+public:
+	ST_LF_QUEUE()
+	{
+		auto n = new STNODE{ -1 };
+		head.set_ptr(n, 0);
+		tail.set_ptr(n, 0);
+	}
+	void clear()
+	{
+		while (-1 != Dequeue());
+	}
+	
+	void Enqueue(int x)
+	{
+		STNODE* e = new STNODE(x);
+		while (true) {
+			STPTR last{ tail };
+			STPTR next{ last.get_ptr()->next }; // last의 next를 넣기
+			if (last.get_ptr() != tail.get_ptr()) continue; // 다른애가 건드렸으면.
+			// stamp도 비교해야 하지만 어차피 뒤에서 cas로 비교할 테니 굳이 안해도됨
+			if (nullptr == next.get_ptr()) {
+				tail.CAS(last.get_ptr(), next.get_ptr(), last.get_stamp(), last.get_stamp() + 1);
+				continue;
+			}
+			// 마지막 노드의 next에 카스.
+			if (true == last.get_ptr()->next.CAS(nullptr, e, next.get_stamp(), next.get_stamp() + 1)) {
+				tail.CAS(last.get_ptr(), e, last.get_stamp(), last.get_stamp() + 1);
+				return;
+			}
+		}
+	}
+	int Dequeue()
+	{
+		while (true) {
+			auto first = head;
+			auto next = first.get_ptr()->next;
+			auto last = tail;
+			if (first != head) continue;
+			if (nullptr == next) return -1; // empty queue
+			if (first == last) {
+				CAS(&tail, last, next);
+				continue;
+			}
+			int value = next->key;
+			if (false == CAS(&head, first, next)) continue;
+			delete first;
+			// delete를 하면 안되는 이유: delete한 노드를 누군가 바라보니까
+			// 
 			return value;
 		}
 	}
@@ -137,19 +253,13 @@ const int NUM_TEST = 10000000;
 thread_local int thread_id;
 std::atomic_int loop_count = NUM_TEST;
 
-LF_QUEUE my_queue;
+ST_LF_QUEUE my_queue;
 
 template <class T>
 void benchmark(int num_thread, const int th_id, T& my_set)
 {
 	thread_id = th_id;
 	int key = 0;
-	/*while (loop_count-- > 0) {
-		if ((rand() % 2 == 0))
-			my_queue.Enqueue(key++);
-		else
-			my_queue.Dequeue();
-	}*/
 	for (int i = 0; i < NUM_TEST / num_thread; i++) {
 		if ((i < 32) || (rand() % 2 == 0))
 			my_queue.Enqueue(key++);
