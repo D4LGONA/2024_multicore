@@ -5,6 +5,7 @@
 #include <vector>
 
 constexpr int MAX_THREADS = 16;
+class STNODE;
 
 class DUMMYMUTEX 
 {
@@ -20,7 +21,6 @@ public:
 	NODE* volatile next;
 	NODE(int x) : key(x), next(nullptr) {}
 };  // 노드를 락킹할 필요는 x
-
 
 class C_QUEUE {
 	NODE* volatile head;
@@ -67,7 +67,7 @@ public:
 		std::cout << std::endl;
 	}
 };
-std::atomic_bool stop = false;
+
 class LF_QUEUE {
 	NODE* volatile head;
 	NODE* volatile tail;
@@ -114,7 +114,7 @@ public:
 				CAS(&tail, last, next);
 				continue;
 			}
-			int value = next->key;
+			int value = first->key;
 			if (false == CAS(&head, first, next)) continue;
 			delete first;
 			// delete를 하면 안되는 이유: delete한 노드를 누군가 바라보니까
@@ -135,7 +135,6 @@ public:
 
 class STPTR
 {
-	//NODE* volatile m_ptr; // 이런식으로 선언하면 프로그래밍 할 때 실수할수 잇음
 public:
 	std::atomic_llong m_stptr;
 	STPTR(STNODE* p, int st)
@@ -144,17 +143,12 @@ public:
 	}
 	STPTR(const STPTR& new_v)
 	{
-		m_stptr = new_v.m_stptr.load();
+		m_stptr.store(new_v.m_stptr.load());
 	}
 	void set_ptr(STNODE* p, int st)
 	{
-		long long t = reinterpret_cast<int>(p) << 32;
-		m_stptr = t << 32 + st;
-	}
-	long long get_value() { return m_stptr; }
-	void copy(const STPTR& new_v)
-	{
-		m_stptr = new_v.m_stptr.load();
+		long long t = reinterpret_cast<unsigned int>(p);
+		m_stptr = (t << 32) + st;
 	}
 
 	STNODE* get_ptr()
@@ -169,10 +163,10 @@ public:
 
 	bool CAS(STNODE* old_ptr, STNODE* new_ptr, int old_st, int new_st)
 	{
-		long long old_v = reinterpret_cast<int>(old_ptr) << 32;
-		old_v = old_v << 32 + old_st;
-		long long new_v = reinterpret_cast<int>(new_ptr) << 32;
-		new_v = new_v << 32 + new_st;
+		long long old_v = reinterpret_cast<unsigned int>(old_ptr);
+		old_v = (old_v << 32) + old_st;
+		long long new_v = reinterpret_cast<unsigned int>(new_ptr);
+		new_v = (new_v << 32) + new_st;
 		return std::atomic_compare_exchange_strong(&m_stptr, &old_v, new_v);
 	}
 };
@@ -204,10 +198,10 @@ public:
 		STNODE* e = new STNODE(x);
 		while (true) {
 			STPTR last{ tail };
-			STPTR next{ last.get_ptr()->next }; // last의 next를 넣기
+			STPTR next{ tail.get_ptr()->next }; // last의 next를 넣기
 			if (last.get_ptr() != tail.get_ptr()) continue; // 다른애가 건드렸으면.
 			// stamp도 비교해야 하지만 어차피 뒤에서 cas로 비교할 테니 굳이 안해도됨
-			if (nullptr == next.get_ptr()) {
+			if (nullptr != next.get_ptr()) { // 만약 추가할 데가 건드려졌으면
 				tail.CAS(last.get_ptr(), next.get_ptr(), last.get_stamp(), last.get_stamp() + 1);
 				continue;
 			}
@@ -221,21 +215,21 @@ public:
 	int Dequeue()
 	{
 		while (true) {
-			auto first = head;
-			auto next = first.get_ptr()->next;
-			auto last = tail;
-			if (first != head) continue;
-			if (nullptr == next) return -1; // empty queue
-			if (first == last) {
-				CAS(&tail, last, next);
+			STPTR first{ head };
+			STPTR next{ head.get_ptr()->next }; // 뽑을 애.
+			STPTR last{ tail }; // 꼬리..
+			if (first.get_ptr() != head.get_ptr()) continue;
+			if (nullptr == next.get_ptr()) return -1; // empty queue
+			if (first.get_ptr() == last.get_ptr()) { // 큐가 비지 않았으나 최신의 값을 가지고 있지 않다?
+				tail.CAS(last.get_ptr(), next.get_ptr(), last.get_stamp(), last.get_stamp() + 1); // 최신의 값 갖도록 하기.
 				continue;
 			}
-			int value = next->key;
-			if (false == CAS(&head, first, next)) continue;
-			delete first;
-			// delete를 하면 안되는 이유: delete한 노드를 누군가 바라보니까
-			// 
-			return value;
+
+			if (true == head.CAS(first.get_ptr(), next.get_ptr(), first.get_stamp(), first.get_stamp() + 1)) {
+					int value = first.get_ptr()->key; // 뽑을 애의 값을 알아내기.
+					delete first.get_ptr();
+					return value;
+			}
 		}
 	}
 	void print20()
@@ -253,7 +247,7 @@ const int NUM_TEST = 10000000;
 thread_local int thread_id;
 std::atomic_int loop_count = NUM_TEST;
 
-ST_LF_QUEUE my_queue;
+LF_QUEUE my_queue;
 
 template <class T>
 void benchmark(int num_thread, const int th_id, T& my_set)
