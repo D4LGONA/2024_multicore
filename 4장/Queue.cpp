@@ -136,28 +136,36 @@ public:
 class STPTR
 {
 public:
-	std::atomic_llong m_stptr;
+	//std::atomic_llong m_stptr; // 얘는 캐시라인에 절대 걸리지 않음
+	std::atomic_int m_stamp;
+	STNODE* volatile m_ptr; // 이렇게 선언하면 캐시경계선에 걸릴수있어 오동작의 가능성 있음.
 	STPTR(STNODE* p, int st)
 	{
 		set_ptr(p, st);
 	}
 	STPTR(const STPTR& new_v)
 	{
-		m_stptr.store(new_v.m_stptr.load());
+		//m_stptr.store(new_v.m_stptr.load());
+		m_stamp = new_v.m_stamp.load();
+		m_ptr = new_v.m_ptr;
 	}
 	void set_ptr(STNODE* p, int st)
 	{
-		long long t = reinterpret_cast<unsigned int>(p);
-		m_stptr = (t << 32) + st;
+		//long long t = reinterpret_cast<unsigned int>(p);
+		//m_stptr = (t << 32) + st;
+		m_stamp = st; // 여기가 atomic하지 않음.
+		m_ptr = p;
 	}
 
 	STNODE* get_ptr()
 	{
-		return reinterpret_cast<STNODE*> (m_stptr >> 32);
+		return m_ptr;
+		//return reinterpret_cast<STNODE*> (m_stptr >> 32);
 	}
 	int get_stamp()
 	{
-		return m_stptr & 0xFFFFFFFF; // 32비트만 꺼냄..?
+		return m_stamp;
+		//return m_stptr & 0xFFFFFFFF; // 32비트만 꺼냄..?
 	}
 
 
@@ -167,7 +175,8 @@ public:
 		old_v = (old_v << 32) + old_st;
 		long long new_v = reinterpret_cast<unsigned int>(new_ptr);
 		new_v = (new_v << 32) + new_st;
-		return std::atomic_compare_exchange_strong(&m_stptr, &old_v, new_v);
+		//return std::atomic_compare_exchange_strong(&m_stptr, &old_v, new_v);
+		return std::atomic_compare_exchange_strong(reinterpret_cast<std::atomic_llong*>(&m_stamp), &old_v, new_v);
 	}
 };
 
@@ -225,10 +234,10 @@ public:
 				continue;
 			}
 
+			int value = next.get_ptr()->key; // 뽑을 애의 값을 알아내기.
 			if (true == head.CAS(first.get_ptr(), next.get_ptr(), first.get_stamp(), first.get_stamp() + 1)) {
-					int value = first.get_ptr()->key; // 뽑을 애의 값을 알아내기.
-					delete first.get_ptr();
-					return value;
+				delete first.get_ptr();
+				return value;
 			}
 		}
 	}
@@ -247,7 +256,7 @@ const int NUM_TEST = 10000000;
 thread_local int thread_id;
 std::atomic_int loop_count = NUM_TEST;
 
-LF_QUEUE my_queue;
+ST_LF_QUEUE my_queue;
 
 template <class T>
 void benchmark(int num_thread, const int th_id, T& my_set)
@@ -273,7 +282,7 @@ int main()
 		std::vector<std::thread> tv;
 		auto start_t = high_resolution_clock::now();
 		for (int i = 0; i < n; ++i) {
-			tv.emplace_back(benchmark<LF_QUEUE>, n, i, std::ref(my_queue));
+			tv.emplace_back(benchmark<ST_LF_QUEUE>, n, i, std::ref(my_queue));
 		}
 		for (auto& th : tv) th.join();
 		auto end_t = high_resolution_clock::now();
