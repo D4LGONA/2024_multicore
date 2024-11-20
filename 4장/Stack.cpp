@@ -58,10 +58,11 @@ public:
 	}
 	void print20()
 	{
+		NODE* p = m_top;
 		for (int i = 0; i < 20; ++i) {
-			int v = Pop();
-			if (v == -2) break; // 비었다는 뜻
-			std::cout << v << ", ";
+			if (p == nullptr) break; // 비었다는 뜻
+			std::cout << p->key << ", ";
+			p = p->next;
 		}
 		std::cout << std::endl;
 	}
@@ -103,10 +104,11 @@ public:
 	}
 	void print20()
 	{
+		NODE* p = m_top;
 		for (int i = 0; i < 20; ++i) {
-			int v = Pop();
-			if (v == -2) break; // 비었다는 뜻
-			std::cout << v << ", ";
+			if (p == nullptr) break; // 비었다는 뜻
+			std::cout << p->key << ", ";
+			p = p->next;
 		}
 		std::cout << std::endl;
 	}
