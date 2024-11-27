@@ -29,6 +29,54 @@ public:
 	void Unlock() { n_lock.unlock(); }
 };
 
+class SK_LF_NODE;
+class SK_SPTR
+{
+	std::atomic<long long> sptr;
+public:
+	SK_SPTR() : sptr(0) {}
+	void set_ptr(SK_LF_NODE* ptr)
+	{
+		sptr = reinterpret_cast<long long>(ptr);
+	}
+	SK_LF_NODE* get_ptr()
+	{
+		return reinterpret_cast<SK_LF_NODE*>(sptr & 0xFFFFFFFFFFFFFFFE);
+	}
+	SK_LF_NODE* get_ptr(bool* removed)
+	{
+		long long p = sptr;
+		*removed = (1 == (p & 1));
+		return reinterpret_cast<SK_LF_NODE*>(p & 0xFFFFFFFFFFFFFFFE);
+	}
+	bool get_removed()
+	{
+		return (1 == (sptr & 1));
+	}
+	bool CAS(SK_LF_NODE* old_p, SK_LF_NODE* new_p, bool old_m, bool new_m)
+	{
+		long long old_v = reinterpret_cast<long long>(old_p);
+		if (true == old_m) old_v = old_v | 1;
+		else
+			old_v = old_v & 0xFFFFFFFFFFFFFFFE;
+		long long new_v = reinterpret_cast<long long>(new_p);
+		if (true == new_m) new_v = new_v | 1;
+		else
+			new_v = new_v & 0xFFFFFFFFFFFFFFFE;
+		return std::atomic_compare_exchange_strong(&sptr, &old_v, new_v);
+	}
+};
+
+class SK_LF_NODE {
+public:
+	int	key;
+	int top_level;
+	SK_SPTR next[MAX_TOP + 1];
+	SK_LF_NODE(int x, const int top) : key(x), top_level(top) {
+		//for (auto& p : next) p = nullptr;
+	}
+};
+
 class NODE {
 public:
 	int	key;
@@ -38,7 +86,6 @@ public:
 	void lock() { n_lock.lock(); }
 	void unlock() { n_lock.unlock(); }
 };
-
 class C_SET {
 	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
 	std::mutex set_lock;
@@ -126,7 +173,6 @@ public:
 		std::cout << std::endl;
 	}
 };
-
 class C_SK_SET {
 	SK_NODE head{ std::numeric_limits<int>::min(), MAX_TOP };
 	SK_NODE tail{ std::numeric_limits<int>::max(), MAX_TOP };
@@ -240,7 +286,6 @@ public:
 		std::cout << std::endl;
 	}
 };
-
 class L_SK_SET {
 	SK_NODE head{ std::numeric_limits<int>::min(), MAX_TOP };
 	SK_NODE tail{ std::numeric_limits<int>::max(), MAX_TOP };
@@ -406,7 +451,151 @@ public:
 	}
 };
 
-C_SK_SET my_set;
+class LF_SK_SET {
+	SK_LF_NODE head{ std::numeric_limits<int>::min(), MAX_TOP };
+	SK_LF_NODE tail{ std::numeric_limits<int>::max(), MAX_TOP };
+public:
+	LF_SK_SET()
+	{
+		for (auto& p : head.next) p.set_ptr(&tail);
+	}
+	void clear()
+	{
+		while (head.next[0].get_ptr() != &tail) {
+			auto p = head.next[0].get_ptr();
+			head.next[0].set_ptr(head.next[0].get_ptr()->next[0].get_ptr());
+			delete p;
+		}
+		for (auto& p : head.next)
+			p.set_ptr(&tail);
+	}
+	bool Find(int x, SK_LF_NODE* prevs[], SK_LF_NODE* currs[])
+	{
+	retry:
+		for (int i = MAX_TOP; i >= 0; --i) {
+			if (i == MAX_TOP)
+				prevs[i] = &head;
+			else
+				prevs[i] = prevs[i + 1];
+			currs[i] = prevs[i]->next[i].get_ptr();
+
+			while (true) {
+				bool removed = false;
+				SK_LF_NODE* succ = currs[i]->next[i].get_ptr(&removed);
+				while (true == removed) {
+					bool b = prevs[i]->next[i].CAS(currs[i], succ, false, false);
+					if (b == false) {
+						goto retry;
+					}
+					currs[i] = prevs[i]->next[i].get_ptr();
+					succ = currs[i]->next[i].get_ptr(&removed);
+				}
+				if (currs[i]->key >= x)
+					break;
+				prevs[i] = currs[i];
+				currs[i] = succ;
+			}
+		}
+		return (currs[0]->key == x);
+	}
+	bool Add(int x)
+	{
+		while (true) {
+			SK_LF_NODE* prevs[MAX_TOP + 1];
+			SK_LF_NODE* currs[MAX_TOP + 1];
+			bool found = Find(x, prevs, currs);
+			if (true == found)
+				return false;
+			int lv = 0;
+			for (int i = 0; i < MAX_TOP; ++i) {
+				if (rand() % 2 == 0) break;
+				lv++;
+			}
+			SK_LF_NODE* n = new SK_LF_NODE{ x, lv };
+			for (int i = 0; i <= lv; ++i) {
+				n->next[i].set_ptr(currs[i]);
+			}
+			if (false == prevs[0]->next[0].CAS(currs[0], n, false, false))
+				continue;
+			for (int i = 1; i <= lv; ++i) {
+				while (true) {
+					if (true == prevs[i]->next[i].CAS(currs[i], n, false, false))
+						break;
+					Find(x, prevs, currs);
+					n->next[i].set_ptr(currs[i]);
+				}
+			}
+			return true;
+		}
+	}
+	bool Remove(int x)
+	{
+		while (true) {
+			// 1. 검색하기.
+			SK_LF_NODE* prevs[MAX_TOP + 1];
+			SK_LF_NODE* currs[MAX_TOP + 1];
+			bool found = Find(x, prevs, currs); // 삭제할 것 찾기: curr이 삭제할 것?
+			if (!found) return false; // 존재하지 않음
+			SK_LF_NODE* nodeToRemove = currs[0]; // 지울 애 선택.
+			for (int i = nodeToRemove->top_level; i >= 1; --i) { // 위 노드들에 마킹 시도
+				bool marked = false;
+				SK_LF_NODE* succ = nodeToRemove->next[i].get_ptr(&marked);
+				while (!marked) {
+					nodeToRemove->next[i].CAS(succ, succ, false, true);
+					succ = nodeToRemove->next[i].get_ptr(&marked);
+				}
+			}
+
+			// 첫번째 노드에 마킹 시도
+			bool marked = false;
+			SK_LF_NODE* succ = nodeToRemove->next[0].get_ptr(&marked);
+			while (true) {
+				bool iMarkedIt = nodeToRemove->next[0].CAS(succ, succ, false, true);
+				succ = nodeToRemove->next[0].get_ptr(&marked);
+				if (iMarkedIt) {
+					Find(x, prevs, currs);
+					return true;
+				}
+				else if (marked) return false;
+			}
+		}
+	}
+	bool Contains(int x)
+	{
+		SK_LF_NODE* prevs = &head;
+		SK_LF_NODE* currs;
+		SK_LF_NODE* succ;
+		bool marked;
+		for (int i = MAX_TOP; i >= 0; --i) {
+			currs = prevs->next[i].get_ptr();
+			while (true) {
+				succ = currs->next[i].get_ptr(&marked);
+				while (marked) {
+					currs = currs->next[i].get_ptr();
+					succ = currs->next[i].get_ptr(&marked);
+				}
+				if (currs->key < x) {
+					prevs = currs;
+					currs = succ;
+				}
+				else break;
+			}
+		}
+		return (currs->key == x);
+	}
+	void print20() // 0번만 따라가면 됨.
+	{
+		auto p = head.next[0].get_ptr();
+		for (int i = 0; i < 20; ++i) {
+			if (p == &tail) break;
+			std::cout << p->key << ", ";
+			p = p->next[0].get_ptr();
+		}
+		std::cout << std::endl;
+	}
+};
+
+LF_SK_SET my_set;
 
 const int NUM_TEST = 4000000;
 const int KEY_RANGE = 1000;
@@ -516,7 +705,7 @@ int main()
 {
 	using namespace std::chrono;
 
-	for (int n = 1; n <= MAX_THREADS; n = n * 2) {
+	/*for (int n = 1; n <= MAX_THREADS; n = n * 2) {
 		my_set.clear();
 		for (auto& v : history)
 			v.clear();
@@ -531,9 +720,9 @@ int main()
 		auto exec_t = end_t - start_t;
 		size_t ms = duration_cast<milliseconds>(exec_t).count();
 		std::cout << n << " Threads,  " << ms << "ms.";
-		check_history(n);
 		my_set.print20();
-	}
+		check_history(n);
+	}*/
 
 	for (int n = 1; n <= MAX_THREADS; n = n * 2) {
 		my_set.clear();
