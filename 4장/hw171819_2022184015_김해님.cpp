@@ -471,92 +471,105 @@ public:
 	}
 	bool Find(int x, SK_LF_NODE* prevs[], SK_LF_NODE* currs[])
 	{
+		bool marked = false;
+		bool snip;
+		SK_LF_NODE* pred = nullptr;
+		SK_LF_NODE* curr = nullptr;
+		SK_LF_NODE* succ = nullptr;
 	retry:
-		for (int i = MAX_TOP; i >= 0; --i) {
-			if (i == MAX_TOP)
-				prevs[i] = &head;
-			else
-				prevs[i] = prevs[i + 1];
-			currs[i] = prevs[i]->next[i].get_ptr();
-
-			while (true) {
-				bool removed = false;
-				SK_LF_NODE* succ = currs[i]->next[i].get_ptr(&removed);
-				while (true == removed) {
-					bool b = prevs[i]->next[i].CAS(currs[i], succ, false, false);
-					if (b == false) {
-						goto retry;
+		while (true) {
+			pred = &head;
+			for (int i = MAX_TOP; i >= 0; --i) {
+				curr = pred->next[i].get_ptr();
+				while (true) {
+					succ = curr->next[i].get_ptr(&marked);
+					while (marked) {
+						snip = pred->next[i].CAS(curr, succ, false, false);
+						if (false == snip) 
+							goto retry;
+						curr = pred->next[i].get_ptr();
+						succ = curr->next[i].get_ptr(&marked);
 					}
-					currs[i] = prevs[i]->next[i].get_ptr();
-					succ = currs[i]->next[i].get_ptr(&removed);
+					if (curr->key < x) {
+						pred = curr;
+						curr = succ;
+					}
+					else break;
 				}
-				if (currs[i]->key >= x)
-					break;
-				prevs[i] = currs[i];
-				currs[i] = succ;
+				prevs[i] = pred;
+				currs[i] = curr;
 			}
+			return (curr->key == x);
 		}
-		return (currs[0]->key == x);
 	}
 	bool Add(int x)
 	{
+		SK_LF_NODE* prevs[MAX_TOP + 1];
+		SK_LF_NODE* currs[MAX_TOP + 1];
+		int lv = 0;
+		for (int i = 0; i < MAX_TOP; ++i) {
+			if (rand() % 2 == 0) break;
+			lv++;
+		}
 		while (true) {
-			SK_LF_NODE* prevs[MAX_TOP + 1];
-			SK_LF_NODE* currs[MAX_TOP + 1];
 			bool found = Find(x, prevs, currs);
 			if (true == found)
 				return false;
-			int lv = 0;
-			for (int i = 0; i < MAX_TOP; ++i) {
-				if (rand() % 2 == 0) break;
-				lv++;
-			}
 			SK_LF_NODE* n = new SK_LF_NODE{ x, lv };
-			for (int i = 0; i <= lv; ++i) {
+			for (int i = 0; i <= lv; ++i) { // 내 뒤에 애
 				n->next[i].set_ptr(currs[i]);
 			}
-			if (false == prevs[0]->next[0].CAS(currs[0], n, false, false))
+			SK_LF_NODE* pred = prevs[0];
+			SK_LF_NODE* curr = currs[0];
+			n->next[0].set_ptr(curr);
+			if (false == prevs[0]->next[0].CAS(currs[0], n, false, false)) // 내 앞에 애
 				continue;
 			for (int i = 1; i <= lv; ++i) {
 				while (true) {
-					if (true == prevs[i]->next[i].CAS(currs[i], n, false, false))
+					pred = prevs[i];
+					curr = currs[i];
+					if (true == pred->next[i].CAS(currs[i], n, false, false))
 						break;
 					Find(x, prevs, currs);
-					n->next[i].set_ptr(currs[i]);
 				}
 			}
 			return true;
 		}
 	}
-	bool Remove(int x)
-	{
+	bool Remove(int x) {
+		SK_LF_NODE* prevs[MAX_TOP + 1];
+		SK_LF_NODE* currs[MAX_TOP + 1];
+
 		while (true) {
-			// 1. 검색하기.
-			SK_LF_NODE* prevs[MAX_TOP + 1];
-			SK_LF_NODE* currs[MAX_TOP + 1];
-			bool found = Find(x, prevs, currs); // 삭제할 것 찾기: curr이 삭제할 것?
-			if (!found) return false; // 존재하지 않음
-			SK_LF_NODE* nodeToRemove = currs[0]; // 지울 애 선택.
-			for (int i = nodeToRemove->top_level; i >= 1; --i) { // 위 노드들에 마킹 시도
+			bool found = Find(x, prevs, currs);
+			if (!found) return false;
+
+			SK_LF_NODE* nodeToRemove = currs[0];
+			for (int i = nodeToRemove->top_level; i >= 1; --i) {
 				bool marked = false;
 				SK_LF_NODE* succ = nodeToRemove->next[i].get_ptr(&marked);
 				while (!marked) {
 					nodeToRemove->next[i].CAS(succ, succ, false, true);
 					succ = nodeToRemove->next[i].get_ptr(&marked);
 				}
+
+				if (false == marked)
+					int k = 0;
 			}
 
-			// 첫번째 노드에 마킹 시도
 			bool marked = false;
 			SK_LF_NODE* succ = nodeToRemove->next[0].get_ptr(&marked);
 			while (true) {
-				bool iMarkedIt = nodeToRemove->next[0].CAS(succ, succ, false, true);
+				bool b = nodeToRemove->next[0].CAS(succ, succ, false, true);
 				succ = nodeToRemove->next[0].get_ptr(&marked);
-				if (iMarkedIt) {
+				if (b == true) {
 					Find(x, prevs, currs);
 					return true;
 				}
-				else if (marked) return false;
+				else if (marked) {
+					return false;
+				}
+				
 			}
 		}
 	}
@@ -579,6 +592,7 @@ public:
 					currs = succ;
 				}
 				else break;
+
 			}
 		}
 		return (currs->key == x);
@@ -705,7 +719,7 @@ int main()
 {
 	using namespace std::chrono;
 
-	/*for (int n = 1; n <= MAX_THREADS; n = n * 2) {
+	for (int n = 1; n <= MAX_THREADS; n = n * 2) {
 		my_set.clear();
 		for (auto& v : history)
 			v.clear();
@@ -722,7 +736,7 @@ int main()
 		std::cout << n << " Threads,  " << ms << "ms.";
 		my_set.print20();
 		check_history(n);
-	}*/
+	}
 
 	for (int n = 1; n <= MAX_THREADS; n = n * 2) {
 		my_set.clear();
