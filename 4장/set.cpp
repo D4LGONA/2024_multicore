@@ -3,6 +3,9 @@
 #include <mutex>
 #include <chrono>
 #include <vector>
+// 12/9 Ãß°¡
+#include <tbb/rw_mutex.h>
+#include <shared_mutex>
 
 class NODE {
 public:
@@ -16,7 +19,9 @@ public:
 
 class C_SET {
 	NODE head{ (int)(0x80000000) }, tail{ (int)(0x7FFFFFFF) };
-	std::mutex set_lock;
+	//std::mutex set_lock;
+	//tbb::rw_mutex set_lock;
+	std::shared_mutex set_lock;
 public:
 	C_SET()
 	{
@@ -75,18 +80,21 @@ public:
 	bool Contains(int x)
 	{
 		auto prev = &head;
-		set_lock.lock();
+		set_lock.lock_shared();
+		//set_lock.lock();
 		auto curr = prev->next;
 		while (curr->key < x) {
 			prev = curr;
 			curr = curr->next;
 		}
 		if (curr->key == x) {
-			set_lock.unlock();
+			//set_lock.unlock();
+			set_lock.unlock_shared();
 			return true;
 		}
 		else {
-			set_lock.unlock();
+			//set_lock.unlock();
+			set_lock.unlock_shared();
 			return false;
 		}
 	}

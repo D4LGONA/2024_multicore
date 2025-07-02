@@ -374,10 +374,8 @@ public:
 					prevs[i]->next[i] = n;
 				}
 				n->fully_linked = true;
-				for (int i = 0; i <= lv; ++i)
+				for (int i = 0; i <= max_locked; ++i)
 					prevs[i]->Unlock();
-				if (x == 0)
-					int k = 0;
 				return true;
 			}
 		}
@@ -385,7 +383,6 @@ public:
 
 	bool Remove(int x)
 	{
-
 		SK_NODE* prevs[MAX_TOP + 1];
 		SK_NODE* currs[MAX_TOP + 1];
 		while (true) {
@@ -394,7 +391,7 @@ public:
 			SK_NODE* victim = currs[f_level];
 			if (true == victim->removed)
 				return false;
-			if (true == victim->fully_linked)
+			if (false == victim->fully_linked)
 				return false;
 			if (f_level != victim->top_level)
 				continue;
@@ -412,6 +409,7 @@ public:
 				int max_locked = -1;
 				for (int i = 0; i <= victim->top_level; ++i) {
 					prevs[i]->Lock();
+					max_locked = i;
 					valid = (prevs[i]->removed == false)
 						&& (prevs[i]->next[i] == victim);
 					if (false == valid) break;
@@ -422,11 +420,12 @@ public:
 					Find(x, prevs, currs);
 					continue;
 				}
-				for (int i = victim->top_level; i >= 0; --i) {
+				for (int i = max_locked; i >= 0; --i) {
 					prevs[i]->next[i] = currs[i]->next[i];
 				}
-				for (int i = 0; i <= victim->top_level; ++i)
+				for (int i = 0; i <= max_locked; ++i)
 					prevs[i]->Unlock();
+				victim->Unlock();
 				return true;
 			}
 		}
